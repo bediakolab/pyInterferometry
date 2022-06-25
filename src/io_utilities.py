@@ -263,14 +263,18 @@ class DataSetContainer:
 
     def update_material_parameters(self, folderprefix):
         # asks for manual input of these parameters
-        split_prefix = folderprefix.split("_")
-        material = split_prefix[0].lower().replace('/', '-').replace(':', '-').replace('_', '-')
-        orrientation = split_prefix[1].lower()
-        self.update_parameter("Material", material)
+        folderprefix = folderprefix.replace('/', '-').replace(':', '-').replace('_', '-')
+        split_prefix = folderprefix.split("-")
+        orrientation = split_prefix[-1].lower()
+        materials = split_prefix[0:-1]
+        materials = [el.lower() for el in materials]
+        if len(materials) > 1: 
+            self.is_hbl = True
+            self.update_parameter("Material", '-'.join(materials))
+        else:
+            self.update_parameter("Material", materials[0])
+            self.is_hbl = False
         self.update_parameter("Orientation", orrientation)
-        materials = material.split('-')
-        if len(materials) > 1: self.is_hbl = True
-        else: self.is_hbl = False
         for material in materials:
             if material not in known_materials.keys():
                 print("material {} doesnt have tabulated lattice constant data will ask for manual definition".format(material))
