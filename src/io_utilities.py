@@ -18,7 +18,7 @@ from unwrap_utils import getAdjacencyMatrixManual, rotate_uvecs
 from visualization import disp_categorize_plot, displacement_colorplot, plot_adjacency, colored_quiver
 from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
 from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ
-from strain import strain
+from strain import strain, unscreened_piezocharge, strain_induced_polarization
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
 #from new_utils import normNeighborDistance
 
@@ -216,6 +216,9 @@ class DataSetContainer:
         self.cropdisppath     = os.path.join(self.plotpath, "displacement_cropped.png")
         self.cropgammapath    = os.path.join(self.plotpath, "shear_cropped.png")
         self.quivplotpath     = os.path.join(self.plotpath, "quiver.png")
+        self.piezoplotpath    = os.path.join(self.plotpath, "piezo_charge.png")
+        self.piezoquiverpath  = os.path.join(self.plotpath, "piezo_polarization.png")
+        self.piezohexplotpath = os.path.join(self.plotpath, "hex_piezocharge.png")
 
         # fields to hold the data
         self.u_unwrap       = None     # set by extract_unwraping, update_unwrapping
@@ -279,6 +282,8 @@ class DataSetContainer:
             if material not in known_materials.keys():
                 print("material {} doesnt have tabulated lattice constant data will ask for manual definition".format(material))
                 return
+            if known_materials[material][3] is not None:    
+                self.update_parameter("PiezoChargeConstant", known_materials[material][3], "update_material_parameters")
         if self.is_hbl:
             a1 = known_materials[materials[0]][0]
             a2 = known_materials[materials[1]][0]
@@ -360,14 +365,6 @@ class DataSetContainer:
         plt.savefig(self.twistplotpath, dpi=300)
         plt.close('all')
 
-    def make_piezoplot(self):
-        
-        print("WARNING: assuming that displacement in top/bottom layers of same magnitude. Heterostrain can cause deviation from this. For HBL this might be far from truth.")
-
-        
-
-        return
-
     def make_adjacency_plot(self):
 
         if os.path.exists(self.adjplotpath): return
@@ -438,17 +435,16 @@ class DataSetContainer:
             plt.savefig(self.catplotpath, dpi=300)
             plt.close('all')
         
-    def make_displacement_plot(self, showflag=False):
-        if os.path.exists(self.dispplotpath): return
+    def make_displacement_plot(self, showflag=False, rewrite=False):
+        if os.path.exists(self.dispplotpath) and not rewrite: 
+            print('{} exists so skipping'.format(self.dispplotpath))
+            return
         if self.u_wrapped is None: self.extract_displacement_fit()
         f, ax = plt.subplots(1,2)
         if self.extract_parameter("DisplacementBasis", param_type=str) != "Cartesian":
-            img = displacement_colorplot(ax[0], latticevec_to_cartesian(self.u_wrapped), quiverbool=False)
-            img = displacement_colorplot(ax[1], latticevec_to_cartesian(self.u_wrapped), quiverbool=True)
-        else:
-            img = displacement_colorplot(ax[0], self.u_wrapped, quiverbool=False)
-            img = displacement_colorplot(ax[1], self.u_wrapped, quiverbool=True)
-
+            self.u_wrapped = latticevec_to_cartesian(self.u_wrapped)
+        img = displacement_colorplot(ax[0], self.u_wrapped, quiverbool=False)
+        img = displacement_colorplot(ax[1], self.u_wrapped, quiverbool=True)
         print("saving displacement plot to {}".format(self.dispplotpath)) 
         ax[0].set_title("$u_{raw}(x,y)$")    
         ax[0].set_xlabel("$x(pixels)$")  
@@ -459,6 +455,98 @@ class DataSetContainer:
         else:
             plt.savefig(self.dispplotpath, dpi=300)
             plt.close('all')
+
+    def make_piezo_plots(self, rewrite=True):
+
+        if self.is_hbl: 
+            print('skipping HBL piezocharge calculations')
+            return 
+
+        if os.path.exists(self.piezoplotpath) and not rewrite: 
+            print('{} exists so skipping'.format(self.piezoplotpath))
+            return
+
+        if self.u_unwrap is None: self.extract_unwraping()  
+        sigma = self.extract_parameter("SmoothingSigma",      update_if_unset=True, param_type=float)
+        ss    = self.extract_parameter("PixelSize",           force_set=True,       param_type=float)
+        a     = self.extract_parameter("LatticeConstant",     force_set=True,       param_type=float)
+        pc    = self.extract_parameter("PiezoChargeConstant", update_if_unset=True, param_type=float)
+        smoothed_u = smooth(self.u_unwrap, sigma)
+        smooth_scale_u = smoothed_u * a/ss
+        piezo_top = unscreened_piezocharge(smooth_scale_u, ss=ss, coef=pc)
+        P_top = strain_induced_polarization(smooth_scale_u, ss=ss, coef=pc)
+
+        x, y, px, py = [], [], [], []
+        P_mag = np.zeros((P_top.shape[1], P_top.shape[2]))
+        for i in range(P_top.shape[1]):
+            for j in range(P_top.shape[2]):
+                x.append(j)
+                y.append(i)
+                px.append(P_top[0,i,j])
+                py.append(P_top[1,i,j])
+                P_mag[i,j] = ( P_top[0,i,j] ** 2 + P_top[1,i,j] ** 2 ) ** 0.5
+
+        f, ax = plt.subplots()
+        lim = np.nanmax(np.abs(piezo_top.flatten())) # want colormap symmetric about zero
+        im = ax.imshow(piezo_top, origin='lower', cmap='RdBu_r', vmax=lim, vmin=-lim)
+        plt.colorbar(im, ax=ax, orientation='vertical')
+        ax.set_title("$rho_{unscreened piezo}^{top}(e*nm^{-2})$")   
+        ax.set_xlabel("$x(pixels)$")  
+        ax.set_ylabel("$y(pixels)$") 
+        print("saving piezocharge plot to {}".format(self.piezoplotpath)) 
+        plt.savefig(self.piezoplotpath, dpi=300)      
+        
+        f, ax = plt.subplots()
+        lim = np.nanmax(np.abs(P_mag.flatten())) # want colormap symmetric about zero
+        im = ax.imshow(P_mag, origin='lower', cmap='RdBu_r', vmax=lim, vmin=-lim)
+        plt.colorbar(im, ax=ax, orientation='vertical')       
+        ax.quiver(x, y, px, py)
+        ax.set_title("$P_{unscreened piezo}^{top}(e*nm^{-1})$")    
+        ax.set_xlabel("$x(pixels)$")  
+        ax.set_ylabel("$y(pixels)$")
+        plt.savefig(self.piezoquiverpath, dpi=300)     
+
+        # get the averaged strains
+        u, scaled_u, _, _, _ = self.extract_strain()
+        tri_centers, thetas, het_strains = extract_twist_hetstrain(self)
+        mask, use_tris, tris, _ = manual_define_good_triangles(piezo_top, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
+        uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False)
+
+        # apply mask
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if mask[i,j]: piezo_top[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan
+        
+        start, spacing = 0.6, 25
+        xrang = np.arange(-start,start+(1/spacing),1/spacing)
+        N = len(xrang)
+        avg_piezo, counter = np.zeros((N,N)), np.zeros((N,N))
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if not np.isnan(uvecs_cart[i,j,0]) and not np.isnan(uvecs_cart[i,j,1]):
+                    ux_index = int(np.round((uvecs_cart[i,j,0]+start)*spacing))
+                    uy_index = int(np.round((uvecs_cart[i,j,1]+start)*spacing))
+                    avg_piezo[ux_index, uy_index] += piezo_top[i,j]
+                    counter[ux_index, uy_index] += 1
+        for i in range(N):
+            for j in range(N):    
+                if counter[i,j] > 0: avg_piezo[i, j] /= counter[i,j]
+                else: avg_piezo[i, j] = np.nan
+
+        f, axes = plt.subplots(1,2)
+        axes = axes.flatten()
+        lim = np.nanmax(np.abs(avg_piezo.flatten())) # want colormap symmetric about zero
+        im = axes[0].imshow(avg_piezo, origin='lower', cmap='RdBu_r', vmax=lim, vmin=-lim)
+        plt.colorbar(im, ax=axes[0], orientation='vertical')
+        axes[0].set_title('$<\\rho_{piezo}^{top}>%$')  
+        im = axes[1].imshow(counter, origin='lower', cmap='inferno')
+        plt.colorbar(im, ax=axes[1], orientation='vertical')
+        axes[1].set_title('counts')
+        for ax in axes: ax.axis('off')
+        for ax in axes: ax.set_aspect('equal')
+        print("saving piezo hex plot to {}".format(self.piezohexplotpath))
+        plt.savefig(self.piezohexplotpath, dpi=300)
+        plt.close('all')
 
     def make_bindisplacement_plot(self):
         if os.path.exists(self.dispbin2plotpath): return
@@ -746,8 +834,7 @@ class DataSetContainer:
     def update_parameter(self, field, newvalue=None, comment=""):
         self.param_dictionary, self.parameter_dict_comments = parse_parameter_file(self.parampath)
         if field not in self.param_dictionary.keys():
-            print('ERROR parameter {} is unrecognized for {}'.format(field, self.name))
-            exit(1)
+            self.param_dictionary[field] = "Unset"
         if newvalue is None:
             newvalue = input("Enter value for {} for {} --> ".format(field, self.name)).lower().strip()
             try: newvalue = float(newvalue)
@@ -785,8 +872,9 @@ class DataSetContainer:
         self.param_dictionary, self.parameter_dict_comments = parse_parameter_file(self.parampath)
         if field not in self.param_dictionary.keys():
             print('parameter {} is unrecognized'.format(field))
-            exit(1)
-        value = self.param_dictionary[field]
+            value == default_parameter_filler
+        else: 
+            value = self.param_dictionary[field]
         if value == default_parameter_filler: 
             if update_if_unset: 
                 value = self.update_parameter(field) # set the parameter if unset

@@ -1,14 +1,14 @@
 
 # material name is key
-# value is list of [ lattice const in nm, PR if parallel, PR if antiparrallel ] (PR=poisson ratio)
+# value is list of [ lattice const in nm, PR if parallel, PR if antiparrallel, piezoelectric constant in C/m ] (PR=poisson ratio)
 # Ref: HQ Graphene for lattice constants
 # Ref: Zeng, Fan, Wei-Bing Zhang, and Bi-Yu Tang. Chinese Physics B 24.9 (2015): 097103 for PR
 #      Assuming AP all XMMX, P all XM, ratios from DFT (optB88)
 known_materials = {
-	"mos2" :  [0.315, 0.234, 0.247],
-	"mose2" : [0.329, 0.223, 0.230],
-	"mote2" : [0.353, 0.248, 0.242],
-	"wse2" :  [0.328, None,  None]
+	"mos2" :  [0.315, 0.234, 0.247, 2.9e-10],
+	"mose2" : [0.329, 0.223, 0.230, 3.1e-10],
+	"mote2" : [0.353, 0.248, 0.242, 4.3e-10],
+	"wse2" :  [0.328, None,  None,  None]
 }
 
 # key is ID, value is message given to user when defining it 
@@ -57,6 +57,7 @@ default_parameters = {
 		"LatticeMismatch": default_parameter_filler, 
 		"ProbeUsed": default_parameter_filler, 
 		"PoissonRatio": default_parameter_filler, 
+		"PiezoChargeConstant": default_parameter_filler, 
 		"ScanShapeX": default_parameter_filler, 
 		"ScanShapeY": default_parameter_filler, 
 		"SmoothingSigma": default_parameter_filler, 

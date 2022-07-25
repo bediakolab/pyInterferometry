@@ -252,7 +252,7 @@ def unwrap_old(u, params=None, manual=False, plotbool=False, voronibool=True, ce
     return u, centers, adjacency_type       
 
 
-def tot_peizo_charge(u, epsilon, gvecs):
+def tot_piezo_charge(u, epsilon, gvecs):
 
     ux, uy = u[:,:,0], u[:,:,1]
     utx, ubx = ux * 0.5, ux * -0.5
@@ -269,47 +269,62 @@ def tot_peizo_charge(u, epsilon, gvecs):
         value = 0
 
 
-def peizo_charge(u, epsilon, is_ap_data):
+# stepsize ss is nm per pixel
+# coef : piezoelectric coefficent for this material in C per m
+# returns piezo-charge in C per m^2 for top layer, piezo_bot = piezo_top if P, = -piezo_top if AP
+def unscreened_piezocharge(u, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    # rho_piezo for an AP dataset
-    # 2 * e_11 d(u_xy)/dx - e_11 * d(u_xx - u_yy)/dy
-    # e_11 : free parameter in the piezopotential for TMD - for MoS2 this is 2.9e-11 C m^-1
-    # u_xx = d(u_x)/dx where u is interlayer displacement
-    # u_yy = d(u_y)/dy where u is interlayer displacement
-    # u_xy = 0.5 * ( d(u_y)/dx + d(u_x)/dy ) where u is interlayer displacement
-    
-    # note this is NOT rotationally invariant: y must be along a vertical mirror plane for the system, so a X-M bond axis. 
+    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
 
-    # rho_piezo for a P dataset approximately zero, since proportional to u_top + u_bottom which we are assuming are equal and opposite. 
-    # instead of (as for AP) u_top - u_bottom, which is the interlayer displacement we got.
-    if not is_ap_data: return np.zeros((u.shape[0], u.shape[1]))
+    # rho_piezo_top is e_11_top * [ d_xx u_y + d_xy u_x + d_xy u_x - d_yy u_y ]
+    # THIS ASSUMES HOMOBILAYER utot = utop - ubot = utop - (-utop) so ----> utop = utot/2
 
-    ux, uy = u[:,:,0], u[:,:,1]
-    exx = np.gradient(ux, axis=1) # want interlayer, with |u| = |utop| + |ubottom| so no divide by 2
-    exy = np.gradient(ux, axis=0)
-    eyx = np.gradient(uy, axis=1)
-    eyy = np.gradient(uy, axis=0)
-    exy = 0.5 * (eyx + exy)       # symmetrized strain tensor
+    # u provided is in units of pixels, dx grid in pixels, first derivative unitless
+    # second derivative is in inverse pixels
+    d_xx_u_y = np.gradient(np.gradient(uy, axis=1), axis=1)
+    d_yy_u_y = np.gradient(np.gradient(uy, axis=0), axis=0)
+    d_xy_u_y = np.gradient(np.gradient(uy, axis=0), axis=1)
+    d_xy_u_x = np.gradient(np.gradient(ux, axis=0), axis=1)
+   
+    piezo_unscaled = (d_xx_u_y + d_xy_u_x + d_xy_u_x - d_yy_u_y) #in inverse pixels
+    piezo_unscaled = piezo_unscaled * 1e9 * 1/ss #in inverse m
+    piezo_top = coef * piezo_unscaled # top layer piezocharge in C m^-2
+    piezo_top = piezo_top * (6.241)  # top layer piezocharge in e nm^-2
+    # piezo_top = piezo_top * (6.241e14)  # top layer piezocharge in e cm^-2
+    return piezo_top
 
-    d_exy_dx = np.gradient(exy, axis=1)
-    d_exx_dy = np.gradient(exy, axis=0)
-    d_eyy_dy = np.gradient(exy, axis=0)
+# stepsize ss is nm per pixel
+# coef : piezoelectric coefficent for this material in C per m
+# returns strain induced polarization in C per m for top layer
+def strain_induced_polarization(u, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    rho_piezo_ap = 2 * d_exy_dx - d_exx_dy + d_eyy_dy  # 2 * d(u_xy)/dx - d(u_xx - u_yy)/dy 
-    # THIS IS WITHOUT SCREENING!! NEED TO SOLVE POISSON FOR SCREENING
-    rho_piezo_ap *= epsilon # indep component of piezoelectric tensor - for MoS2 this is 2.9e-11 C m^-1
-    return rho_piezo_ap
+    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
 
+    # u provided is in units of pixels, dx grid in pixels, first derivative unitless
+    # second derivative is in inverse pixels
+    d_x_u_y = np.gradient(uy, axis=1)
+    d_y_u_y = np.gradient(uy, axis=0)
+    d_x_u_x = np.gradient(ux, axis=1)
+    d_y_u_x = np.gradient(ux, axis=0)
+    P_unscaled = np.array([0.5 * (d_x_u_y + d_y_u_x), d_x_u_x - d_y_u_y]) #unitless
+    P_top = coef * P_unscaled # top layer piezocharge in C m^-1
+    P_top = P_top * (6.241e9) # top layer piezocharge in e nm^-1
+    # P_top * (6.241e16) # top layer piezocharge in e cm^-1
+    return P_top    
 
 # strain from simple differentiation, asume unwrapped
 def strain(u, smoothfunc=(lambda u: u), ax=None, plotbool=False, norm=False):
-    ux = smoothfunc(u[:,:,0])
-    uy = smoothfunc(u[:,:,1])
-    exx = 0.5 * np.gradient(ux, axis=1) # want intralayer, with |u| = |utop| + |ubottom| \approx 2*|u_intra| so divide by 2
-    exy = 0.5 * np.gradient(ux, axis=0)
-    eyx = 0.5 * np.gradient(uy, axis=1)
-    eyy = 0.5 * np.gradient(uy, axis=0)
-    e_off = 0.5 * (exy + eyx) # this was g_xy in previous code
+    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+    exx = np.gradient(ux, axis=1) # dx ux
+    exy = np.gradient(ux, axis=0) # dy ux
+    eyx = np.gradient(uy, axis=1) # dx uy
+    eyy = np.gradient(uy, axis=0) # dy uy
+    # u provided is in units of pixels, dx grid in pixels, first derivative unitless
+    e_off = 0.5 * (exy + eyx) # this was g_xy in previous code, symmetrized off-diag (dxuy + dyux)/2
+
     gamma = np.zeros((exx.shape[0], exx.shape[1]))
     dil = np.zeros((exx.shape[0], exx.shape[1]))
     theta_p = np.zeros((exx.shape[0], exx.shape[1]))

@@ -31,7 +31,7 @@ def colored_quiver(ax, u_x, u_y):
             uy.append(u_y[i,j])
             c.append(colors[i,j,:])
     ax.quiver(x, y, ux, uy, color=c)
-
+ 
 ##################################################################
 # plots voroni regions used in unwrapping procedure
 ##################################################################

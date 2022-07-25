@@ -69,7 +69,7 @@ def main():
         if ds.check_has_displacement():
 
             # post displacement fitting plots/analysis
-            ds.make_displacement_plot()
+            ds.make_displacement_plot(rewrite=False)
             ds.make_categorize_plot()
 
         elif ds.check_has_diskset() and False:#boolquery("fit displacement?"):
@@ -98,6 +98,7 @@ def main():
             ds.make_twist_plot()
             ds.make_strainplots_uncropped()
             ds.get_strain_stats()
+            ds.make_piezo_plots(rewrite=True)
             ds.make_cropped_plots()
             ds.make_averaged_hexplots()
 
@@ -110,6 +111,7 @@ def main():
             ds.make_twist_plot()
             ds.make_strainplots_uncropped()
             ds.get_strain_stats()
+            ds.make_piezo_plots(rewrite=True)
             ds.make_cropped_plots()
 
         counter += 1
