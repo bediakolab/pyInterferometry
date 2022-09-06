@@ -120,7 +120,21 @@ def getColors(thetas, het_strains):
     het_strain_colors = colormap_func(norm(het_strain_colors))
     return theta_colors, het_strain_colors
 
+##### WORK ON !!
+def matrixFromTriangleQuantity(triangles, centers, values, N):
+    matrix = np.zeros((N,N))
+    for n in range(len(triangles)):
+        triangle = triangles[n]
+        val = values[n]
+        if not np.isnan(val):
+            mask = make_contour_mask(N, N, contour=[centers[tri] for tri in triangle])
+            for i in range(N):
+                for j in range(N):
+                    if mask[i,j]: matrix[i,j] = val
+    return matrix
+
 def plotTriangleQuantity(triangles, tri_centers, values, colors, ax, title, centers, manual=False, use_tris=None):
+
     if use_tris is None: use_tris = [True for tri in triangles]
     for n in range(len(triangles)):
         triangle = triangles[n]
@@ -184,7 +198,10 @@ def computeAllTris(triangles, centers, pixelsize, poissonratio, a, delta, is_hbl
             thetas.append(np.nan)
             het_strains.append(np.nan)
             tri_centers.append([np.nan, np.nan])
-    return tri_centers, thetas, het_strains
+            #thetas, het_strains if homoBL
+            #thetas, tri anisotropy if heteroBL rigid delta
+            #delta, tri anisotropy  if heteroBL rigid twist
+    return tri_centers, thetas, het_strains 
 
 def extract_twist_hetstrain(ds):
     adjacency_table = (ds.adjacency_type > 0).astype(int)
@@ -193,18 +210,17 @@ def extract_twist_hetstrain(ds):
     pixelsize = ds.extract_parameter("PixelSize", update_if_unset=True, param_type=float)
     delta = ds.extract_parameter("LatticeMismatch", update_if_unset=True, param_type=float)
     is_hbl = ( delta != 0.0 )
-    if not is_hbl:
-        poissonratio = ds.extract_parameter("PoissonRatio", update_if_unset=True, param_type=float)
-    else:
-        poissonratio = None
     if is_hbl:
         given_twist = ds.extract_parameter("DiffractionPatternTwist", update_if_unset=True, param_type=float)
+        poissonratio = None
+        tri_centers, deltas, het_strain_proxys = computeAllTris(triangles, ds.centers, pixelsize, poissonratio, a, delta, is_hbl, given_twist)
+        return tri_centers, None, None, deltas, het_strain_proxys
     else:
-        given_twist = None
-    tri_centers, thetas, het_strains = computeAllTris(triangles, ds.centers, pixelsize, poissonratio, a, delta, is_hbl, given_twist)
-    return tri_centers, thetas, het_strains
+        poissonratio = ds.extract_parameter("PoissonRatio", update_if_unset=True, param_type=float)
+        tri_centers, thetas, het_strains = computeAllTris(triangles, ds.centers, pixelsize, poissonratio, a, delta, is_hbl, None)
+        return tri_centers, thetas, het_strains, None, None
 
-def plot_twist_hetstrain(ds, ax1, ax2, thetas, het_strains, tri_centers):
+def plot_twist_hetstrain(ds, ax1, ax2, thetas, het_strains, tri_centers, N):
     is_hbl = ( ds.extract_parameter("LatticeMismatch", force_set=True, param_type=float) != 0.0 )
     if is_hbl:
         given_twist = ds.extract_parameter("DiffractionPatternTwist", update_if_unset=True, param_type=float)
@@ -221,10 +237,10 @@ def plot_twist_hetstrain(ds, ax1, ax2, thetas, het_strains, tri_centers):
         t = '$<\\theta_m> = {:.2f} +/- {:.2f}^o$'.format(np.nanmean(thetas), stder(thetas))
         plotTriangleQuantity(triangles, tri_centers, thetas, theta_colors, ax1, t, centers)
         t = '$<deform> = {:.2f} +/- {:.2f} \%$'.format(np.nanmean(het_strains), stder(het_strains))
-        plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colors, ax2, t, centers)
+        plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colextract_twist_hetstrainors, ax2, t, centers)
         return np.nanmean(thetas), np.nanmean(het_strains)
     elif is_hbl and given_twist is not None:
-        t = '$<\delta> = {:.2f} +/- {:.2f}^o$'.format(np.nanmean(thetas), stder(thetas))
+        t = '$<\delta> = {:.2f} +/- {:.2f}\%$'.format(np.nanmean(thetas), stder(thetas))
         plotTriangleQuantity(triangles, tri_centers, thetas, theta_colors, ax1, t, centers)
         t = '$<deform> = {:.2f} +/- {:.2f} \%$'.format(np.nanmean(het_strains), stder(het_strains))
         plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colors, ax2, t, centers)
@@ -353,6 +369,9 @@ def fit_heterostrain(l1, l2, l3, poissonratio, a, delta, hbl=False, given_twist=
         return np.abs(theta_t) * 180/np.pi, None, np.abs(eps*100)
     elif hbl and given_twist is not None:
         L = np.mean([l1,l2,l3])
+        print('moire wl was {}'.format(L))
+        #print('moire twist {} degrees'.format(given_twist))
+        #print('moire twist -> wl of {}'.format(1/(2*np.sin(given_twist * np.pi/180 * 0.5))))
         eps = (np.max([l1,l2,l3]) - np.min([l1,l2,l3]))/np.max([l1,l2,l3])
         #b = np.cos(given_twist * np.pi/180)
         denom = a**2 - L**2
@@ -364,7 +383,9 @@ def fit_heterostrain(l1, l2, l3, poissonratio, a, delta, hbl=False, given_twist=
         comp_delta = (- gamma + np.sqrt(L**2 * gamma))/denom
         if comp_delta > 0: # using delta = aS/aL - 1 so want < 0
             comp_delta = (- gamma - np.sqrt(L**2 * gamma))/denom
+        print('lattice mismatch therefore {}%'.format(comp_delta*100))
         return (comp_delta)*100, None, np.abs(eps*100)    
+
 
 def test_sensitivity_to_pr(L, deform, PR):
     theta, _, hs = fit_heterostrain(L, L, (L + deform*L), PR, a=1, delta=None, hbl=False)

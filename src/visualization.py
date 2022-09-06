@@ -19,16 +19,19 @@ from diskset import DiskSet
 from new_utils import import_uvector, import_diskset, import_unwrap_uvector, normNeighborDistance, anom_filter, import_uvectors, fit_ellipse
 from utils import writefile
 
-def colored_quiver(ax, u_x, u_y):
+
+def colored_quiver(ax, u_x, u_y, sample_angle=0):
     colors = displacement_colorplot(None, u_x, u_y)
+    uxrot = np.cos(sample_angle) * u_x - np.sin(sample_angle) * u_y
+    uyrot = np.cos(sample_angle) * u_y + np.sin(sample_angle) * u_x
     nx, ny = u_x.shape
     x, y, ux, uy, c = [], [], [], [], []
     for i in range(nx):
         for j in range(ny):
             x.append(j)
             y.append(i)
-            ux.append(u_x[i,j])
-            uy.append(u_y[i,j])
+            ux.append(uxrot[i,j])
+            uy.append(uyrot[i,j])
             c.append(colors[i,j,:])
     ax.quiver(x, y, ux, uy, color=c)
  
@@ -67,7 +70,7 @@ def plot_adjacency(img, centers, adjacency_type, ax=None, colored=True):
 ##################################################################
 # plots displacements (cartesian basis) with cosine colorplot
 ##################################################################
-def displacement_colorplot(ax, Ux, Uy=None, plot_hexagon_bool=False, quiverbool=True):
+def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
     nx, ny = Ux.shape
     g1 = np.array([ 0, 2/np.sqrt(3)])
@@ -87,7 +90,10 @@ def displacement_colorplot(ax, Ux, Uy=None, plot_hexagon_bool=False, quiverbool=
             colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0)
         else: ax.imshow(colors1, origin='lower')
         for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
-        if not plot_hexagon_bool and quiverbool: ax.quiver(Ux, Uy)
+        if not plot_hexagon_bool and quiverbool: 
+            uxrot = np.cos(sample_angle) * Ux - np.sin(sample_angle) * Uy
+            uyrot = np.cos(sample_angle) * Uy + np.sin(sample_angle) * Ux
+            ax.quiver(uxrot, uyrot)
     return colors1
 
 ##################################################################
@@ -426,7 +432,7 @@ def displacement_categorize(ufit, ax0=None, ax1=None, ax2=None):
 # function to make a legend for the colorplot visualization
 ##################################################################
 def make_legend_categorized(ax=None, plotflag=True, boundary=0.5):
-    xrange = np.arange(-0.50, 0.5 + 0.01, 0.01)#np.arange(-2.5, 2.52, 0.02)
+    xrange = np.arange(-0.50, 0.5 + 0.001, 0.001)#np.arange(-2.5, 2.52, 0.02)
     nx = len(xrange)
     U, V = np.meshgrid(xrange, xrange)
     f = -2 * np.max(U[:,:]) 
@@ -584,7 +590,7 @@ def plot_hexagon(ax, nx, ny, data, orientation=0, radius=1/2):
     mask = make_contour_mask(nx, ny, points)
     data[mask <= 0,:] = [1.0, 1.0, 1.0]
     ax.imshow(data)
-    #ax.add_patch(hex)
+    ax.add_patch(hex)
     return data
 
 ##################################################################
@@ -632,12 +638,13 @@ def plot_disk_asymmetry(diskset):
 
 if __name__ == "__main__":
 
-    if False:
-        f, ax = plt.subplots(1,2)
+    if True:
+        #f, ax = plt.subplots(1,2)
         #make_legend_categorized(ax=ax[0], plotflag=False)
-        #make_legend(ax=ax[1], plotflag=False)
-        make_examplefig_categorized(ax[0])
-        plt.show()
+        #make_examplefig_categorized(ax[0])
+        f, ax = plt.subplots()
+        make_legend(ax, plotflag=False)
+        plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
         exit()
 
     replot_bool = boolquery("would you like to categorize the displacement fields for stats?")

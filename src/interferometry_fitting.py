@@ -17,6 +17,59 @@ from pathos.multiprocessing import Pool # pathos.multiprocessing can serialize w
 from basis_utils import lv_to_rzlv, latticevec_to_cartesian, cartesian_to_latticevec
 import warnings
 
+def verify_dfs(savepath, diskset, coefs, ulv):
+
+    I = diskset.df_set()
+    g = diskset.clean_normgset(sanity_plot = False)
+    for n in range(len(g)):
+        I[n,:,:] = normalize(I[n,:,:])
+    ndisks = I.shape[0]
+
+    if isinstance(coefs, list):
+        coefs_mat = np.zeros((ndisks, len(coefs)))
+        for i in range(len(coefs)):
+            coefs_mat[:,i] = coefs[i]
+        coefs = coefs_mat
+
+    f, ax = plt.subplots(ndisks,4)
+    for disk in range(ndisks):
+        vals  = np.zeros((ulv.shape[0],ulv.shape[1]))
+        for i in range(ulv.shape[0]):
+            for j in range(ulv.shape[1]):
+                u  = [ulv[i,j,0], ulv[i,j,1]]
+                if coefs.shape[1] == 2: # fit A, B only
+                    vals[i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(g[disk],u) ) ** 2 + coefs[disk,1]
+                elif coefs.shape[1] == 3: # fit ABC
+                    vals[i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(g[disk],u) ) ** 2 + coefs[disk,2]
+                    vals[i,j] += coefs[disk,1] * np.cos( np.pi * np.dot(g[disk],u) ) * np.sin( np.pi * np.dot(g[disk],u) )
+        ax[disk,0].imshow(I[disk,:,:],      origin='lower')
+        ax[disk,1].imshow(vals,   origin='lower')
+        ax[disk,3].imshow(I[disk,:,:]-vals, origin='lower')
+        ax[disk,0].set_title("raw disk {} g={}{}".format(disk, g[disk][0], g[disk][1]),fontsize=5)
+        ax[disk,1].set_title("fit disk lv basis {} g={}{}".format(disk, g[disk][0], g[disk][1]),fontsize=5)
+        ax[disk,3].set_title("resid disk {} g={}{}".format(disk, g[disk][0], g[disk][1]),fontsize=5)
+
+    # Cart BASIS check
+    g1  = np.array([ 0, 2/np.sqrt(3)])
+    g2  = np.array([-1, 1/np.sqrt(3)])
+    ucart = latticevec_to_cartesian(ulv.copy())
+    for disk in range(ndisks):
+        vals  = np.zeros((ucart.shape[0],ucart.shape[1]))
+        for i in range(ulv.shape[0]):
+            for j in range(ulv.shape[1]):
+                u  = [ucart[i,j,0], ucart[i,j,1]]
+                gvec = g[disk][0] * g2 + g[disk][1] * g1
+                if coefs.shape[1] == 2: # fit A, B only
+                    vals[i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(gvec,u) ) ** 2 + coefs[disk,1]
+                elif coefs.shape[1] == 3: # fit ABC
+                    vals[i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(gvec,u) ) ** 2 + coefs[disk,2]
+                    vals[i,j] += coefs[disk,1] * np.cos( np.pi * np.dot(gvec,u) ) * np.sin( np.pi * np.dot(gvec,u) )
+        ax[disk,2].imshow(vals,   origin='lower')
+        ax[disk,2].set_title("fit cart basis disk {} g={}{}".format(disk, g[disk][0], g[disk][1]),fontsize=5)
+
+    plt.savefig(savepath, dpi=300)
+    plt.close('all')
+
 def refit_full_hexagon_from_bin(diskset, coefs, uvecs, g=None):
 
     # get vector of g corresponding to diffraction pattern intensities 

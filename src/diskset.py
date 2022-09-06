@@ -17,6 +17,7 @@ def manual_select_disks(diskset, dp, use_log):
         disk_id = diskset.get_closest_disk(x,y)
         print('selecting disk ', disk_id)
         diskset.set_useflag(disk_id,True)
+        print('now have {} disks selected'.format(diskset.size_in_use))
         x,y = diskset.x(disk_id), diskset.y(disk_id)
         ax.scatter(y,x,color='w')
         fig.canvas.draw()
@@ -58,7 +59,7 @@ def manual_define_disks(diskset, r, dp, use_log):
     fig, ax = plt.subplots()
     def click_event(click):
         y,x = click.xdata, click.ydata # this is a little slower since resizes after each add but not a bottleneck
-        diskset.add_disk(y, x, True, r)
+        diskset.add_disk(x, y, False, r)
         ax.scatter(y,x,color='b')
         fig.canvas.draw()
     print("please click on the center of the disk in the plot that appears to define new peaks close when done.")
@@ -70,7 +71,7 @@ def manual_define_disks(diskset, r, dp, use_log):
 ####################################################################################################
 # returns virtual dark field image for given bragg disk centered at (x0,y0) of radius r
 ####################################################################################################
-def integrate_disks(datacube, diskset, background_fit=None, radius_factor=1.0):
+def integrate_disks(datacube, diskset, sub=False, background_fit=None, radius_factor=1.0):
     for n in range(diskset.size):
         if diskset.in_use(n): # for disks which have been tagged as important
             x = diskset.x(n) # extract x position of disk center from the provided diskset container class
@@ -144,7 +145,7 @@ def normalize(d):
     d = d/max(d.flatten())
     return d
 
-def get_peak_radius(dp, peaks, dsnum, prefix, contour_boundary=0.35, disk_to_use=3, w=25, plotflag=False):
+def get_peak_radius(dp, peaks, dsnum=None, prefix=None, contour_boundary=0.35, disk_to_use=3, w=25, plotflag=False):
     center = (peaks.data['qx'][disk_to_use], peaks.data['qy'][disk_to_use])
     dp_slice = np.array(dp[int(center[0]-w):int(center[0]+w),int(center[1]-w):int(center[1]+w)])
     dp_slice = normalize(dp_slice)
@@ -173,9 +174,12 @@ def get_peak_radius(dp, peaks, dsnum, prefix, contour_boundary=0.35, disk_to_use
         ax.plot(mr_contour[:, 1], mr_contour[:, 0])
         ax.set_title('Automatic Disk Radii Detection')
         plt.axis('off')
-        fullpath = os.path.join(plots,prefix,'ds_{}'.format(dsnum),'disk_radius.png')
-        plt.savefig(fullpath, dpi=300)
-        plt.close()
+        if prefix is not None: 
+            fullpath = os.path.join(plots,prefix,'ds_{}'.format(dsnum),'disk_radius.png')
+            plt.savefig(fullpath, dpi=300)
+            plt.close()
+        else: 
+            plt.show()
     return max_r
 
 ############################################################################################################
@@ -201,6 +205,21 @@ class DiskSet:
         self.centralbeam = None             # holds the coordinates of the central beam
         self.emptyslots = 0                 # internal variable for use in resizing the data containers
         self.n_manualdef = 0                # internal variable counting the number of additional manually defined disks
+        self.qscale = [1,1]   # when diffraction pattern is distorted as seen in some simulated data 
+        # ie the aspect ratio of (qx,qy) space is not one, then set qscale such that nqx*qscale[0] = nqy*qscale[1]
+        # diffraction patterns will be distorted into a square shape before processing
+
+    def adjust_qspace_aspect_ratio(self, dp):
+        if hasattr(self, 'qscale') and (self.qscale[0] != 1 or self.qscale[1] != 1):
+            # was already scaled!
+            return 
+        desired_q   = np.min([dp.shape[0], dp.shape[1]])
+        qx_scale    = desired_q/dp.shape[1]
+        qy_scale    = desired_q/dp.shape[0]  
+        self.qscale = [qx_scale, qy_scale]
+        for n in range(self.size):
+            self._xvec[n] = qx_scale * self._xvec[n]
+            self._yvec[n] = qy_scale * self._yvec[n]
 
     # sets a given bragg disk as active or inactive
     # usage: to 'activate' disk 3, diskset.set_useflag(3, True)
@@ -256,11 +275,11 @@ class DiskSet:
         if ax is None: f, ax = plt.subplots()
         if origin is None:
             if use_log:
-                im = ax.matshow(dp, norm=LogNorm(vmin=1, vmax=np.max(dp.flatten())))
+                im = ax.matshow(dp, norm=LogNorm(vmin=np.min(dp.flatten()), vmax=np.max(dp.flatten())))
             else: im = ax.matshow(dp)
         else:
             if use_log:
-                im = ax.imshow(dp, origin=origin, norm=LogNorm(vmin=1, vmax=np.max(dp.flatten())))
+                im = ax.imshow(dp, origin=origin, norm=LogNorm(vmin=np.min(dp.flatten()), vmax=np.max(dp.flatten())))
             else: im = ax.imshow(dp, origin=origin)
         for i in range(self.size):
             # only plot selected disks if selected_only is true
@@ -339,6 +358,8 @@ class DiskSet:
     # returns set of distances from central beam for disks that have been integrated (tagged as important) only
     def d_set(self):
         self.set_com_central()
+        #assert( self.size_in_use == len([n for n in range(self.size) if self.in_use(n)]) )
+        self.size_in_use = len([n for n in range(self.size) if self.in_use(n)]) 
         dset = np.zeros((self.size_in_use,2))
         i = 0
         for n in range(self.size):
@@ -371,7 +392,7 @@ class DiskSet:
             pairs.append([disk1, disk2])
         return pairs
 
-    def rotated_normgset(self):
+    def rotated_normgset(self, sanity_plot=False):
         g = self.norm_dset()
         ringnos = self.determine_rings()
         indx_1100 = -1
@@ -383,26 +404,112 @@ class DiskSet:
                     indx_1100 = i
         # get angle from g[i,:] to [0,1]
         theta = np.arccos(np.dot([0,1],g[indx_1100,:]))
+        if sanity_plot:
+            f, ax = plt.subplots()
+            for i in range(len(g)): 
+                if ringnos[i] == 1:
+                    ax.scatter(g[i][0], g[i][1], c='k')
+                if ringnos[i] == 2:
+                    ax.scatter(2*g[i][0], 2*g[i][1], c='k')    
         for i in range(len(g)):
             g[i,:] = rotate2d(g[i,:], -theta)
+        if sanity_plot:
+            for i in range(len(g)): 
+                if ringnos[i] == 1:
+                    ax.scatter(g[i][0], g[i][1], c='r')
+                if ringnos[i] == 2:
+                    ax.scatter(2*g[i][0], 2*g[i][1], c='r')    
+            plt.show()    
         return g
+
+    def get_rotatation(self, sanity_plot=True, savepath=None, printing=False):
+        g1 = np.array([ 0, 2/np.sqrt(3)])
+        g2 = np.array([-1, 1/np.sqrt(3)])
+        graw = self.norm_dset()   
+        g = self.clean_normgset()   
+        angs = []
+        ringnos = self.determine_rings()
+        for i in range(len(g)):
+            if g[i][0] == 1 and g[i][1] == 0:
+                indx = i 
+                break
+        ptC = g[indx][0] * g1 + g[indx][1] * g2
+        ptA = graw[indx][:]
+        # want rotation from A to C, so if x coordinate of A larger, rotate back
+        if ptA[0] > ptC[0]: 
+            rotation_sign = -1
+            if printing: print('raw had larger x')
+        else: 
+            rotation_sign = 1
+            if printing: print('raw had smaller x')
+        if printing: print('index of top was ', indx)
+        if printing: print('raw x coord here was ', ptA[0])
+        if printing: print('target x coord here was ', ptC[0])
+        if printing: print('so rotate by a angle with sign ', rotation_sign)
+        # quick helper - get angle from v1 through v2 to v3 in degrees
+        def get_angle(pts):
+            v1, v2, v3 = pts[0], pts[1], pts[2] 
+            l1 = ((v1[0] - v2[0])**2 + (v1[1] - v2[1])**2)**0.5
+            l2 = ((v1[0] - v3[0])**2 + (v1[1] - v3[1])**2)**0.5
+            l3 = ((v3[0] - v2[0])**2 + (v3[1] - v2[1])**2)**0.5
+            return np.arccos((l1**2 + l3**2 - l2**2)/(2*l1*l3)) 
+        for i in range(len(g)):
+            ptA = graw[i][:]
+            ptB = [0,0]
+            ptC = g[i][0] * g1 + g[i][1] * g2
+            angs.append(get_angle([ptA, ptB, ptC]))
+        mean_ang = rotation_sign * np.mean(angs) 
+        stderr_ang = np.std(angs, ddof=1)/np.sqrt(np.size(angs))
+        if printing: print("{} +/- {} rad".format(mean_ang, stderr_ang))
+        if sanity_plot:
+            f, ax = plt.subplots()
+            for i in range(len(g)):
+                gvec = g[i][0] * g1 + g[i][1] * g2
+                scale = 1/((graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5)
+                ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
+                #ax.text(scale*gvec[0], scale*gvec[1], '{}{}'.format(g[i][0],g[i][1]))
+                ax.text(scale*graw[i][0], scale*graw[i][1], i)
+                grot = rotate2d(scale*graw[i,:], -mean_ang)
+                ax.scatter(grot[0], grot[1], c='c')
+                #ax.text(grot[0], grot[1], i)
+                scale = 1/((gvec[0] ** 2 + gvec[1] ** 2) ** 0.5) * 0.75 #0.75 factor so offset enough to see
+                ax.scatter(scale*gvec[0], scale*gvec[1], c='r')
+                ax.text(scale*gvec[0], scale*gvec[1], i)
+                ax.text(scale*0.75*gvec[0], scale*0.75*gvec[1], '{}{}'.format(g[i][0],g[i][1]))
+            ax.set_title("{} +/- {} rad".format(mean_ang, stderr_ang))       
+            if savepath is not None:
+                plt.savefig(savepath, dpi=300)
+                plt.close('all')
+            else:
+                plt.show()
+        return mean_ang * 180/np.pi, stderr_ang * 180/np.pi
 
     ####################################################################################################
     # I know this is gross it works for now will clean up later
     ####################################################################################################
     def clean_normgset(self, sanity_plot=False, prefix=None, dsnum=None):
+        graw = self.norm_dset()
         g = self.rotated_normgset()
         ringnos = self.determine_rings()
         if sanity_plot:
-            savepath = os.path.join('..','plots', prefix, 'ds_{}'.format(dsnum), 'gvectors.png')
+            #savepath = os.path.join('..','plots', prefix, 'ds_{}'.format(dsnum), 'gvectors.png')
             f, ax = plt.subplots()
+            ax.scatter(0, 0, c='g')
             for i in range(len(g)):
                 if ringnos[i] == 1:
-                    ax.scatter(g[i][0], g[i][1], c='k')
-                    ax.text(g[i][0], g[i][1], i)
+                    #ax.scatter(g[i][0], g[i][1], c='k')
+                    #ax.text(g[i][0], g[i][1], i)
+                    length = (graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5
+                    scale = 1/length
+                    ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
+                    ax.text(scale*graw[i][0], scale*graw[i][1], i)
                 if ringnos[i] == 2:
-                    ax.scatter(2*g[i][0], 2*g[i][1], c='k')
-                    ax.text(2*g[i][0], 2*g[i][1], i)
+                    #ax.scatter(2*g[i][0], 2*g[i][1], c='k')
+                    #ax.text(2*g[i][0], 2*g[i][1], i)
+                    length = (graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5
+                    scale = 1/length
+                    ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
+                    ax.text(scale*graw[i][0], scale*graw[i][1], i)
 
         ind0n1 = np.argmin([g[i,1] if ringnos[i] == 1 else np.inf for i in range(len(g))]) # find ind of disk with smallest y coord in ring 1
         g[ind0n1,:] = [-1,0] # -g1
@@ -412,7 +519,6 @@ class DiskSet:
         g[ind1n2,:] = [1,-2] #-2*g2+g1
         indn12 = np.argmin([g[i,0] if ringnos[i] == 2 else np.inf for i in range(len(g))]) # find ind of disk with smallest x coord in ring 2
         g[indn12,:] = [-1,2]#2*g2-g1
-
         for i in range(len(g)):
             if ringnos[i] == 1 and (i != ind0n1 and i != ind01):
                 if   g[i,1] > 0 and g[i,0] > 0: g[i,:] = [1,-1]  #g1-g2
@@ -430,9 +536,12 @@ class DiskSet:
             g2 = np.array([-1, 1/np.sqrt(3)])
             for i in range(len(g)):
                 gvec = g[i][0] * g1 + g[i][1] * g2
-                ax.scatter(gvec[0], gvec[1], c='r')
-                ax.text(gvec[0], gvec[1], "{}-{}/{}".format(i,g[i][0], g[i][1]))
-            plt.savefig(savepath, dpi=300)
+                length = (gvec[0] ** 2 + gvec[1] ** 2) ** 0.5
+                scale = 1/length
+                ax.scatter(scale*gvec[0], scale*gvec[1], c='r')
+                ax.text(scale*gvec[0], scale*gvec[1], i)# "{}-{}/{}".format(i,g[i][0], g[i][1]))
+            #plt.savefig(savepath, dpi=300)
+            plt.show()    
         return g
 
     def x_set(self): # returns set of distances from central beam for disks that have been integrated only
@@ -474,8 +583,12 @@ class DiskSet:
                 ring_no[n] = -1
         return ring_no
 
-def get_diskset(dp, peaks, scan_shape, centralbeam, dsnum, prefix, radius_factor=0.65, plotflag=True):
-    disk_radius = get_peak_radius(dp, peaks, dsnum, prefix)
+def get_diskset(dp, peaks, scan_shape, centralbeam, dsnum=None, prefix=None, radius_factor=0.65, plotflag=True):
+    try: 
+        disk_radius = get_peak_radius(dp, peaks, dsnum, prefix)
+    except: 
+        print('failed to get a good disk radius, using default radius for disks of 5')
+        disk_radius = 5
     diskset = DiskSet(len(peaks.data['qy']), scan_shape[0], scan_shape[1])
     nx, ny = dp.shape
     r = disk_radius*radius_factor
@@ -485,10 +598,12 @@ def get_diskset(dp, peaks, scan_shape, centralbeam, dsnum, prefix, radius_factor
       diskset.set_x(i,qx)
       diskset.set_y(i,qy)
       diskset.set_r(i,r)
-    diskset.plot(dp, saveflag=True, prefix=prefix, dsnum=dsnum)
+    if prefix is not None: diskset.plot(dp, saveflag=True, prefix=prefix, dsnum=dsnum)
+    else: diskset.plot(dp, saveflag=False)
     use_log = boolquery('use a log plot?')
     manual_define_disks(diskset, r, dp, use_log)
-    diskset.plot(dp, saveflag=True, prefix=prefix, dsnum=dsnum)
+    if prefix is not None: diskset.plot(dp, saveflag=True, prefix=prefix, dsnum=dsnum)
+    else: diskset.plot(dp, saveflag=False)
     return diskset
 
 def select_disks(diskset, dp, disks_to_use=None):

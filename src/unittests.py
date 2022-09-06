@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import pickle
 from basis_utils import rotate_uvecs, cartesian_to_latticevec, latticevec_to_cartesian, lv_to_rzlv, flip_to_reference, rz_helper, cartesian_to_rzcartesian, cartesian_to_rz_WZ, adjust_zone, cart_to_zonebasis, zonebasis_to_cart     
 from strain_utils import differentiate, differentiate_lv 
-from strain import strain, unwrap, plot_rotated_gradients 
+from strain import strain, plot_rotated_gradients  #unwrap
 import scipy.ndimage as ndimage
 from masking import get_aa_mask, get_sp_masks, get_sp_line_method2, get_region_centers
 from utils import get_triangles, bin, tic, toc
@@ -16,6 +16,137 @@ from unwrap_utils import automatic_sp_rotation, geometric_unwrap, getAdjacencyMa
 from utils import merge_u, trim_to_equal_dim, read_excel, nan_gaussian_filter, getAdjacencyMatrixManual, get_AB_centers 
 from new_utils import import_uvector
 
+
+def NEW_TEST(theta_layer1, theta_layer2):
+
+    delta = -5 / 100
+    pr = 0.16 # graphene
+    epsilon = 0 / 100
+    theta_s = 0.0 * np.pi/180
+    a0 = 1
+    N = 100
+    twist = theta_layer1 + theta_layer2 
+    print('lattice mismatch is {} %'.format(100*delta))
+    print('twist angle is {} deg'.format(twist*180/np.pi))
+    expected_lambda = a0 * (1+delta) / np.sqrt(delta**2 + 2*(1+delta)*(1-np.cos(twist)))
+    print('moire wavelength is {} times cell width'.format(expected_lambda/N))
+    print('{} moire units per dimension '.format(N/expected_lambda))
+
+    from moire_sandbox_2 import heterostrain, multiply_three_matrices, get_u_XY_grid, Rmat
+    from diskset import DiskSet
+
+    heterobilayer_mat = np.matrix([[1+delta, 0], [0, 1+delta]])
+    HS_mat = heterostrain(epsilon, pr, theta_s)
+    Transformation = multiply_three_matrices(Rmat(theta_layer2), heterobilayer_mat, HS_mat)
+    print(Transformation)
+    
+    X, Y, Ux, Uy = get_u_XY_grid(Transformation, theta_layer1, N, plotflag=False)
+    uvecs_cart = np.zeros((Ux.shape[0], Ux.shape[1],2))
+    uvecs_cart[:,:,0], uvecs_cart[:,:,1] = Ux[:,:], Uy[:,:]
+    uvecs_rz   = cartesian_to_rzcartesian(uvecs_cart, sign_wrap=False)
+    uvecs_rzlv = cartesian_to_latticevec(uvecs_rz)
+    uvecs_lv   = cartesian_to_latticevec(uvecs_cart)
+
+    f, ax = plt.subplots(6,4)
+    ax = ax.reshape((12,2))
+    nx, ny = N, N
+    ds = DiskSet(12, N, N)
+    gvecs = [ [1,0], [0,1], [1,1], [1,-1], [-1,1], [-1,-1], [2,-1], [-2,1], [1,-2], [-1,2], [-1,0], [0,-1]]
+    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g2 = np.array([-1, 1/np.sqrt(3)])
+    gvecs = np.array(gvecs)
+    ndisks = 12
+    coefs = np.zeros((ndisks, 3)) #abc so 3
+    coefs[:, 0] = np.ones(ndisks)
+    coefs[:, 1] = 0.0 * np.ones(ndisks)
+    coefs[:, 2] = 0.0 * np.ones(ndisks)
+    I = np.zeros((ndisks, nx, ny))
+    for disk in range(ndisks):
+        for i in range(nx):
+            for j in range(ny):
+                gdotu = np.dot(gvecs[disk], np.array([uvecs_lv[i,j,0], uvecs_lv[i,j,1]]))
+                I[disk, i, j] = coefs[disk,0] * np.cos(np.pi * gdotu)**2 
+        ds.set_df(disk, I[disk,:,:])
+
+    f, axes = plt.subplots(4, 3)
+    axes = axes.flatten()
+    for n in range(ndisks):
+        img = I[n,:,:]
+        axes[n].imshow(img, cmap='gray')
+        axes[n].set_title("Disk {}{}".format(gvecs[n][0],gvecs[n][1]))
+        axes[n].axis("off")
+    plt.show()
+    #exit()
+
+    # unit test with raw intensities
+    # testing the fit code to make sure it gives the right uvecs when NOT provided with perfect inital guesses
+    fitcheck = False
+    if fitcheck:
+        ufit_lv, residuals = fit_u(I, coefs, nx, ny, gvecs, guess=None, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
+        for n in range(1):
+            coefs, resid = fit_ABC(I, ufit_lv, nx, ny, gvecs, coefs, nproc=12, parallel=False, norm_bool=True)
+            ufit_lv, resid = fit_u(I, coefs, nx, ny, gvecs, guess=ufit_lv, nproc=12, parallel=True, norm_bool=True, multistart_bool=False)
+        for n in range(1):
+            coefs, resid = fit_ABC(I, ufit_lv, nx, ny, gvecs, coefs, nproc=12, parallel=False, norm_bool=True)
+            ufit_lv, resid = fit_u(I, coefs, nx, ny, gvecs, nproc=12, guess=ufit_lv, parallel=True, norm_bool=True, multistart_neighbor_bool=True)
+        ufit_lv = lv_to_rzlv(ufit_lv, sign_wrap=True)
+        u = latticevec_to_cartesian(ufit_lv)
+        f, ax = plt.subplots(1,2)
+        displacement_colorplot(ax[0], u)
+        displacement_colorplot(ax[1], uvecs_cart)
+        plt.show()
+        Ux, Uy = u[:,:,0], u[:,:,1]
+    else:
+        u = uvecs_cart
+        f, ax = plt.subplots()
+        displacement_colorplot(ax, u)
+        Ux, Uy = u[:,:,0], u[:,:,1]
+        plt.show()
+
+    rotation_correction = - (theta_layer1 + theta_layer2/2)
+    print('rotation_correction of ', rotation_correction)
+    dux_dx, dux_dy, duy_dx, duy_dy = np.gradient(Ux * 0.5, axis=1), np.gradient(Ux * 0.5, axis=0), np.gradient(Uy * 0.5, axis=1), np.gradient(Uy * 0.5, axis=0)
+    cor_dux_dx  = np.cos(rotation_correction) * dux_dx - np.sin(rotation_correction) * dux_dy 
+    cor_dux_dy  = np.sin(rotation_correction) * dux_dx + np.cos(rotation_correction) * dux_dy 
+    cor_duy_dx  = np.cos(rotation_correction) * duy_dx - np.sin(rotation_correction) * duy_dy 
+    cor_duy_dy  = np.sin(rotation_correction) * duy_dx + np.cos(rotation_correction) * duy_dy 
+
+    theta_tot = 180/np.pi * (cor_dux_dy-cor_duy_dx) 
+    #print('expect {}'.format(0.5 * (1+delta) * (epsilon*(pr-1) - 2) * np.sin(twist)))
+    expect_cor_dux_dy = (2+delta-pr*epsilon-pr*epsilon*delta)/2 * np.sin(theta_layer2/2)
+    expect_cor_duy_dx = -(2+delta+epsilon+epsilon*delta)/2 * np.sin(theta_layer2/2)
+    print('expect {}'.format(round(180/np.pi * (expect_cor_dux_dy-expect_cor_duy_dx),4)))
+    approx_hs = ( 4-pr*epsilon+epsilon ) * theta_layer2/4
+    approx_hbl = ( 2+delta ) * theta_layer2/2
+    print('approx expect hs {}'.format(round(180/np.pi * (approx_hs),4)))
+    print('approx expect hbl {}'.format(round(180/np.pi * (approx_hbl),4)))
+    print('got {}'.format(round((theta_tot[N//2,N//2]),4)))
+   
+    dil = 100 * (cor_dux_dx+cor_duy_dy)
+    #print('expect {}'.format(0.5 * (1+delta) * (2 - epsilon*(pr-1)) * np.cos(twist) - 1))
+    expect_cor_dux_dx = (delta+epsilon+delta*epsilon)/2 * np.cos(theta_layer2/2)
+    expect_cor_duy_dy = (delta-pr*epsilon-pr*delta*epsilon)/2 * np.cos(theta_layer2/2)
+    print('expect {}'.format(round(100*(expect_cor_dux_dx+expect_cor_duy_dy),4)))
+    approx_hs = (epsilon-pr*epsilon)/2
+    approx_hbl = delta
+    print('approx expect hs {}'.format(round(100*(approx_hs),4)))
+    print('approx expect hbl {}'.format(round(100*(approx_hbl),4)))
+    print('got {}'.format(round(100*(dil[N//2,N//2]/100),4)))
+
+    f, ax = plt.subplots(1,2)
+    ax[0].imshow(theta_tot)
+    ax[1].imshow(dil)
+    plt.show()
+
+    savepath = '../data/fake_uvecs.pkl'
+    print(u.shape)
+    print(u[0,0,0])
+    with open(savepath, 'wb') as f: 
+        pickle.dump( [u], f )
+    exit()
+
+    exit()
+  
 
 ###########################################################################
 # utility assertion functions 
@@ -810,78 +941,76 @@ def fit_unit_tests(test_serial=False):
     u_lv = lv_to_rzlv(u_lv, sign_wrap=True)
 
 
-    ### hi 
-    x, y = 5,5
-    Icurr = I[:,x,y]
-    maxiter = 3
+    if False:
+        ### hi 
+        x, y = 5,5
+        Icurr = I[:,x,y]
+        maxiter = 3
 
-    from scipy.optimize import bisect 
+        from scipy.optimize import bisect 
 
-    # use first gvector, [1,0] to get |u1| assuming no sincos term
-    # find root of I[0] - cos2(pi*u1) with bisection, u1 in [1/2, 0]
-    i = 1
-    f = lambda x: Icurr[i] - np.cos(np.pi * x)**2
-    if np.sign(f(0)) == np.sign(f(0.5)): u1 = 0
-    else: u1 = bisect(f, 0, 0.5)
+        # use first gvector, [1,0] to get |u1| assuming no sincos term
+        # find root of I[0] - cos2(pi*u1) with bisection, u1 in [1/2, 0]
+        i = 1
+        f = lambda x: Icurr[i] - np.cos(np.pi * x)**2
+        if np.sign(f(0)) == np.sign(f(0.5)): u1 = 0
+        else: u1 = bisect(f, 0, 0.5)
 
-    # then do the same with I[1] for g = [0,1] and u2 
-    i = 0
-    f = lambda x: Icurr[i] - np.cos(np.pi * x)**2
-    if np.sign(f(0)) == np.sign(f(0.5)): u2 = 0
-    else: u2 = bisect(f, 0, 0.5)
+        # then do the same with I[1] for g = [0,1] and u2 
+        i = 0
+        f = lambda x: Icurr[i] - np.cos(np.pi * x)**2
+        if np.sign(f(0)) == np.sign(f(0.5)): u2 = 0
+        else: u2 = bisect(f, 0, 0.5)
 
-    # now tell if [u1, u2] or [u1, -u2]. other two options degenerate without sincos
-    i = 4
-    option1 = Icurr[i] - np.cos(np.pi * u1 - np.pi * u2)**2
-    option2 = Icurr[i] - np.cos(np.pi * u1 + np.pi * u2)**2
-    if np.abs(option1) < np.abs(option2): guess = [u1, -u2]
-    else: guess = [u1, u2]
+        # now tell if [u1, u2] or [u1, -u2]. other two options degenerate without sincos
+        i = 4
+        option1 = Icurr[i] - np.cos(np.pi * u1 - np.pi * u2)**2
+        option2 = Icurr[i] - np.cos(np.pi * u1 + np.pi * u2)**2
+        if np.abs(option1) < np.abs(option2): guess = [u1, -u2]
+        else: guess = [u1, u2]
 
-    utrue = u_lv[x,y,:]
-    print(utrue)
-    print(guess)
-    ufits = [0.0, 0.0]
+        utrue = u_lv[x,y,:]
+        print(utrue)
+        print(guess)
+        ufits = [0.0, 0.0]
 
-    for indx_pair in index_pairs:
-        i,j = indx_pair[:]
+        for indx_pair in index_pairs:
+            i,j = indx_pair[:]
 
-        ucurr = guess
+            ucurr = guess
 
-        for nn in range(maxiter):
-            ff = np.zeros((2,1))
+            for nn in range(maxiter):
+                ff = np.zeros((2,1))
 
-            gdotu1 = np.dot(gvecs[i], ucurr)
-            gdotu2 = np.dot(gvecs[j], ucurr)
+                gdotu1 = np.dot(gvecs[i], ucurr)
+                gdotu2 = np.dot(gvecs[j], ucurr)
 
-            jacobian = np.zeros((2,2))
-            jacobian[0,0] = gvecs[i][0]
-            jacobian[0,1] = gvecs[i][1]
-            jacobian[1,0] = gvecs[j][0]
-            jacobian[1,1] = gvecs[j][1]
-            jacobian[0,:] *= 2.0 * np.cos( np.pi * gdotu1 ) * np.sin( np.pi * gdotu1 ) * np.pi
-            jacobian[1,:] *= 2.0 * np.cos( np.pi * gdotu2 ) * np.sin( np.pi * gdotu2 ) * np.pi
+                jacobian = np.zeros((2,2))
+                jacobian[0,0] = gvecs[i][0]
+                jacobian[0,1] = gvecs[i][1]
+                jacobian[1,0] = gvecs[j][0]
+                jacobian[1,1] = gvecs[j][1]
+                jacobian[0,:] *= 2.0 * np.cos( np.pi * gdotu1 ) * np.sin( np.pi * gdotu1 ) * np.pi
+                jacobian[1,:] *= 2.0 * np.cos( np.pi * gdotu2 ) * np.sin( np.pi * gdotu2 ) * np.pi
 
-            ff[0,0] = Icurr[i] - np.cos( gdotu1*np.pi )**2
-            ff[1,0] = Icurr[j] - np.cos( gdotu2*np.pi )**2
+                ff[0,0] = Icurr[i] - np.cos( gdotu1*np.pi )**2
+                ff[1,0] = Icurr[j] - np.cos( gdotu2*np.pi )**2
 
-            aa = np.linalg.solve( jacobian, ff )
-            ucurr[0] -= aa[0]
-            ucurr[1] -= aa[1]
+                aa = np.linalg.solve( jacobian, ff )
+                ucurr[0] -= aa[0]
+                ucurr[1] -= aa[1]
 
-        ufits[0] += ucurr[0] / len(index_pairs)
-        ufits[1] += ucurr[1] / len(index_pairs)
+            ufits[0] += ucurr[0] / len(index_pairs)
+            ufits[1] += ucurr[1] / len(index_pairs)
 
-    
-    print(ufits)
-    from basis_utils import rz_helper_pair
-    c1, c2 = rz_helper_pair(ufits[0], ufits[1], True)
-    print(c1, c2)
-    exit()
+        
+        print(ufits)
+        from basis_utils import rz_helper_pair
+        c1, c2 = rz_helper_pair(ufits[0], ufits[1], True)
+        print(c1, c2)
+        exit()
 
-   
-
-
-
+       
 
 
 
@@ -891,7 +1020,10 @@ def fit_unit_tests(test_serial=False):
 
 
 
-    ## end hi
+
+
+
+        ## end hi
 
 
     # coupled u, coef optimization 
@@ -899,7 +1031,7 @@ def fit_unit_tests(test_serial=False):
     guess_c = np.zeros((ndisks, 3))
     guess_c[:,0] = 1
     guess_c[:,-1] = 0
-    from interferometry_fitting import fit_u_coef
+    from interferometry_fitting import fit_u
     tic()
     u, residuals = fit_u(I, guess_c, nx, ny, gvecs, nproc=12)
     toc('fit u')
@@ -959,8 +1091,6 @@ def fit_unit_tests(test_serial=False):
     fitcoefs, residuals = fit_ABC(I[:, :5,:5], u_lvrz[:5,:5,:], 5, 5, g=gvecs, coef_guess=coefs, nproc=4, parallel=True, norm_bool=False)
     assert(np.max(np.abs(coefs - fitcoefs)) < 1e-8)
     print("interferometry unit test 6 passing")
-
-    
     
     # testing the fit code to make sure it gives the right uvecs when NOT provided with perfect inital guesses
     ufit_lv, residuals = fit_u(I, coefs, nx, ny, gvecs, guess=None, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
@@ -993,5 +1123,9 @@ def fit_unit_tests(test_serial=False):
     print("interferometry unit test 8 passing")
 
 if __name__ == "__main__":
+    #fit_unit_tests()
+    NEW_TEST(0, 0)
+    #NEW_TEST(-1.5 * np.pi/180, 3.0 * np.pi/180) ---> -1.5 and 1.5
+    #NEW_TEST(-6 * np.pi/180,   3.0 * np.pi/180) # --> -6 and -3 
     tests = [fit_unit_tests, basis_unit_tests, mip_fit_unit_test, strain_unit_tests, unwrap_unit_tests, rotation_test, tblg_unwrap_test, fit_unwrap_unit_test] #
     for test in tests: test()

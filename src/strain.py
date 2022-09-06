@@ -252,30 +252,15 @@ def unwrap_old(u, params=None, manual=False, plotbool=False, voronibool=True, ce
     return u, centers, adjacency_type       
 
 
-def tot_piezo_charge(u, epsilon, gvecs):
-
-    ux, uy = u[:,:,0], u[:,:,1]
-    utx, ubx = ux * 0.5, ux * -0.5
-    uty, uby = uy * 0.5, uy * -0.5
-
-    # equation 11 in SI of 10.1103/PRL.124.206
-    def varphi_t(n, l):
-        gn = abs(gvecs[n])
-        temp1 = 4 * np.pi * np.sinh(gn*d)
-        gamma_t = ( np.exp(gn*d) + 4*np.pi*alpha_t*gn*np.sinh(gn*d) )
-        gamma_b = ( np.exp(gn*d) + 4*np.pi*alpha_b*gn*np.sinh(gn*d) )
-        temp2 = rho_t[n] + rho_b[n] * gamma_t
-        temp3 = gn * gamma_t * gamma_b - gn
-        value = 0
-
-
 # stepsize ss is nm per pixel
 # coef : piezoelectric coefficent for this material in C per m
 # returns piezo-charge in C per m^2 for top layer, piezo_bot = piezo_top if P, = -piezo_top if AP
-def unscreened_piezocharge(u, smoothfunc=(lambda u: u), ss=1, coef=1):
+def unscreened_piezocharge(u, sample_angle=0, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
-    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+    u1 = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    u2 = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+    ux = np.cos(sample_angle) * u1 - np.sin(sample_angle) * u2
+    uy = np.cos(sample_angle) * u2 + np.sin(sample_angle) * u1
 
     # rho_piezo_top is e_11_top * [ d_xx u_y + d_xy u_x + d_xy u_x - d_yy u_y ]
     # THIS ASSUMES HOMOBILAYER utot = utop - ubot = utop - (-utop) so ----> utop = utot/2
@@ -297,10 +282,12 @@ def unscreened_piezocharge(u, smoothfunc=(lambda u: u), ss=1, coef=1):
 # stepsize ss is nm per pixel
 # coef : piezoelectric coefficent for this material in C per m
 # returns strain induced polarization in C per m for top layer
-def strain_induced_polarization(u, smoothfunc=(lambda u: u), ss=1, coef=1):
+def strain_induced_polarization(u, sample_angle=0, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
-    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+    u1 = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    u2 = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+    ux = np.cos(sample_angle) * u1 - np.sin(sample_angle) * u2
+    uy = np.cos(sample_angle) * u2 + np.sin(sample_angle) * u1
 
     # u provided is in units of pixels, dx grid in pixels, first derivative unitless
     # second derivative is in inverse pixels
@@ -315,13 +302,34 @@ def strain_induced_polarization(u, smoothfunc=(lambda u: u), ss=1, coef=1):
     return P_top    
 
 # strain from simple differentiation, asume unwrapped
-def strain(u, smoothfunc=(lambda u: u), ax=None, plotbool=False, norm=False):
-    ux = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
-    uy = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
-    exx = np.gradient(ux, axis=1) # dx ux
-    exy = np.gradient(ux, axis=0) # dy ux
-    eyx = np.gradient(uy, axis=1) # dx uy
-    eyy = np.gradient(uy, axis=0) # dy uy
+def strain(u, sample_angle=0, smoothfunc=(lambda u: u), ax=None, plotbool=False, norm=False):
+
+    Ux = smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
+    Uy = smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
+
+    dux_dx = np.gradient(Ux * 0.5, axis=1) 
+    dux_dy = np.gradient(Ux * 0.5, axis=0) 
+    duy_dx = np.gradient(Uy * 0.5, axis=1)
+    duy_dy = np.gradient(Uy * 0.5, axis=0)
+    rotation_correction = sample_angle * np.pi/180
+    print('accounting for sample rotation of {} degrees, {} rad '.format(sample_angle, rotation_correction))
+    cor_dux_dx  = np.cos(rotation_correction) * dux_dx - np.sin(rotation_correction) * dux_dy 
+    cor_dux_dy  = np.sin(rotation_correction) * dux_dx + np.cos(rotation_correction) * dux_dy 
+    cor_duy_dx  = np.cos(rotation_correction) * duy_dx - np.sin(rotation_correction) * duy_dy 
+    cor_duy_dy  = np.sin(rotation_correction) * duy_dx + np.cos(rotation_correction) * duy_dy
+
+    exx = cor_dux_dx # dx ux
+    exy = cor_dux_dy # dy ux
+    eyx = cor_duy_dx # dx uy
+    eyy = cor_duy_dy # dy uy
+
+    #f,ax = plt.subplots(2,2)
+    #ax[0,0].imshow(exx)
+    #ax[0,1].imshow(exy)
+    #ax[1,0].imshow(eyx)
+    #ax[1,1].imshow(eyy)
+    #plt.show()
+
     # u provided is in units of pixels, dx grid in pixels, first derivative unitless
     e_off = 0.5 * (exy + eyx) # this was g_xy in previous code, symmetrized off-diag (dxuy + dyux)/2
 
@@ -331,13 +339,19 @@ def strain(u, smoothfunc=(lambda u: u), ax=None, plotbool=False, norm=False):
     theta_t = np.zeros((exx.shape[0], exx.shape[1]))
     for i in range(exx.shape[0]):
         for j in range(exx.shape[1]):
-            e = np.matrix([[exx[i,j], e_off[i,j]], [e_off[i,j], eyy[i,j]]])
-            v, u = np.linalg.eig(e)
-            emax, emin = np.max(v), np.min(v)
-            gamma[i,j] = emax - emin 
-            dil[i,j] = emax + emin 
-            theta_p[i,j] = np.arctan(2*e_off[i,j]/(exx[i,j] - eyy[i,j])) * 1/2 * 180/np.pi
-            theta_t[i,j] = ( eyx[i,j] - exy[i,j] ) * 180/np.pi # the curl!
+            if np.isnan(exx[i,j]) or np.isnan(e_off[i,j]) or np.isnan(eyy[i,j]):
+                gamma[i,j] = np.nan
+                dil[i,j] = np.nan
+                #theta_p[i,j] = np.nan
+                theta_t[i,j] = np.nan
+            else:
+                e = np.matrix([[exx[i,j], e_off[i,j]], [e_off[i,j], eyy[i,j]]])
+                v, u = np.linalg.eig(e)
+                emax, emin = np.max(v), np.min(v)
+                gamma[i,j] = emax - emin 
+                dil[i,j] = emax + emin 
+                #theta_p[i,j] = np.arctan(2*e_off[i,j]/(exx[i,j] - eyy[i,j])) * 1/2 * 180/np.pi
+                theta_t[i,j] = ( eyx[i,j] - exy[i,j] ) * 180/np.pi # the curl!
     if norm:
         exx = exx/np.max(np.abs(exx.flatten()))
         exy = exy/np.max(np.abs(exy.flatten()))
