@@ -257,20 +257,22 @@ def unwrap_old(u, params=None, manual=False, plotbool=False, voronibool=True, ce
 # returns piezo-charge in C per m^2 for top layer, piezo_bot = piezo_top if P, = -piezo_top if AP
 def unscreened_piezocharge(u, sample_angle=0, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    u1 = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
-    u2 = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
-    ux = np.cos(sample_angle) * u1 - np.sin(sample_angle) * u2
-    uy = np.cos(sample_angle) * u2 + np.sin(sample_angle) * u1
+    Ux = smoothfunc(u[:,:,0]) * 0.5 # want intralayer, with u = utop - ubottom = 2 * utop
+    Uy = smoothfunc(u[:,:,1]) * 0.5 # measured u want utop so divide by 2 
+    rotation_correction = sample_angle * np.pi/180
+    def dxfunc(func):
+        return np.cos(rotation_correction) * np.gradient(func, axis=1) - np.sin(rotation_correction) * np.gradient(func, axis=0) 
+    def dyfunc(func):
+        return np.sin(rotation_correction) * np.gradient(func, axis=1) + np.cos(rotation_correction) * np.gradient(func, axis=0) 
 
     # rho_piezo_top is e_11_top * [ d_xx u_y + d_xy u_x + d_xy u_x - d_yy u_y ]
     # THIS ASSUMES HOMOBILAYER utot = utop - ubot = utop - (-utop) so ----> utop = utot/2
-
     # u provided is in units of pixels, dx grid in pixels, first derivative unitless
     # second derivative is in inverse pixels
-    d_xx_u_y = np.gradient(np.gradient(uy, axis=1), axis=1)
-    d_yy_u_y = np.gradient(np.gradient(uy, axis=0), axis=0)
-    d_xy_u_y = np.gradient(np.gradient(uy, axis=0), axis=1)
-    d_xy_u_x = np.gradient(np.gradient(ux, axis=0), axis=1)
+    d_xx_u_y = dxfunc(dxfunc(Uy))
+    d_yy_u_y = dyfunc(dyfunc(Uy))
+    d_xy_u_y = dxfunc(dyfunc(Uy))
+    d_xy_u_x = dxfunc(dyfunc(Ux))
    
     piezo_unscaled = (d_xx_u_y + d_xy_u_x + d_xy_u_x - d_yy_u_y) #in inverse pixels
     piezo_unscaled = piezo_unscaled * 1e9 * 1/ss #in inverse m
@@ -284,17 +286,19 @@ def unscreened_piezocharge(u, sample_angle=0, smoothfunc=(lambda u: u), ss=1, co
 # returns strain induced polarization in C per m for top layer
 def strain_induced_polarization(u, sample_angle=0, smoothfunc=(lambda u: u), ss=1, coef=1):
 
-    u1 = 0.5 * smoothfunc(u[:,:,0]) # want intralayer, with u = utop - ubottom = 2 * utop
-    u2 = 0.5 * smoothfunc(u[:,:,1]) # measured u want utop so divide by 2 
-    ux = np.cos(sample_angle) * u1 - np.sin(sample_angle) * u2
-    uy = np.cos(sample_angle) * u2 + np.sin(sample_angle) * u1
-
+    Ux = smoothfunc(u[:,:,0]) * 0.5 # want intralayer, with u = utop - ubottom = 2 * utop
+    Uy = smoothfunc(u[:,:,1]) * 0.5 # measured u want utop so divide by 2 
+    rotation_correction = sample_angle * np.pi/180
+    def dxfunc(func):
+        return np.cos(rotation_correction) * np.gradient(func, axis=1) - np.sin(rotation_correction) * np.gradient(func, axis=0) 
+    def dyfunc(func):
+        return np.sin(rotation_correction) * np.gradient(func, axis=1) + np.cos(rotation_correction) * np.gradient(func, axis=0) 
     # u provided is in units of pixels, dx grid in pixels, first derivative unitless
     # second derivative is in inverse pixels
-    d_x_u_y = np.gradient(uy, axis=1)
-    d_y_u_y = np.gradient(uy, axis=0)
-    d_x_u_x = np.gradient(ux, axis=1)
-    d_y_u_x = np.gradient(ux, axis=0)
+    d_x_u_y = dxfunc(Uy)
+    d_y_u_y = dyfunc(Uy)
+    d_x_u_x = dxfunc(Ux)
+    d_y_u_x = dyfunc(Ux)
     P_unscaled = np.array([0.5 * (d_x_u_y + d_y_u_x), d_x_u_x - d_y_u_y]) #unitless
     P_top = coef * P_unscaled # top layer piezocharge in C m^-1
     P_top = P_top * (6.241e9) # top layer piezocharge in e nm^-1

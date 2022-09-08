@@ -238,11 +238,9 @@ def threshold_plot(uvecs, boundary, delta):
 
     ##################################################################
 
-def disp_categorize_plot(ufit, ax):
+def disp_categorize_plot(ufit, ax): #want cartesian u
     ufit = ufit[1:-1, 1:-1, :]# truncate a little 
     nx, ny = ufit.shape[0], ufit.shape[1]
-    ufit = lv_to_rzcartesian(ufit)
-    delta=(np.pi/12)
     umag = np.zeros((nx,ny))
     for i in range(nx):
         for j in range(ny):
@@ -271,7 +269,7 @@ def disp_categorize_plot(ufit, ax):
         aa_radii.append(r)
         ax.text(x0, y0, "{:.2f}".format(r), color='grey', fontsize='xx-small', horizontalalignment='center')
 
-    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, delta=delta, plotbool=False, include_aa=False, window_filter_bool=False)
+    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, plotbool=False, include_aa=False, window_filter_bool=False)
     no_aa_sp1mask = ((sp1mask.astype(int) - aa_mask.astype(int)) > 0).astype(int)
     contours = measure.find_contours(no_aa_sp1mask, 0.5)
     sp_widths = []
@@ -297,6 +295,18 @@ def disp_categorize_plot(ufit, ax):
             sp_widths.append(bp) # average semi-minor axis 
             ax.text(x0, y0, "{:.2f}".format(bp), color='m', fontsize='xx-small', horizontalalignment='center')
         except: continue    
+    no_aa_sp3mask = ((sp3mask.astype(int) - aa_mask.astype(int)) > 0).astype(int)
+    contours = measure.find_contours(no_aa_sp3mask, 0.5)
+    for contour in contours: 
+        if len(contour[:,1]) < 25: continue
+        try: 
+            x0, y0, ap, bp, e, phi, xfit, yfit = fit_ellipse(contour[:,1], contour[:,0]) # fit to ellipse 
+            # exclude contours that go outside of FOV since biased
+            if np.min(xfit) < 0 or np.min(yfit) < 0 or np.max(xfit) > nx-1 or np.max(yfit) > ny-1: continue
+            ax.plot(xfit, yfit, 'y')
+            sp_widths.append(bp) # average semi-minor axis 
+            ax.text(x0, y0, "{:.2f}".format(bp), color='y', fontsize='xx-small', horizontalalignment='center')
+        except: continue 
     
     spmask = ( (sp1mask + sp2mask + sp3mask) > 0 ).astype(int)
     n_aa, n_sp1, n_sp2, n_sp3, n_ab = 0, 0, 0, 0, 0
@@ -333,7 +343,6 @@ def displacement_categorize(ufit, ax0=None, ax1=None, ax2=None):
     nx, ny = ufit.shape[0], ufit.shape[1]
     displacement_colorplot_lvbasis(ax0, ufit)
     ufit = lv_to_rzcartesian(ufit)
-    delta=(np.pi/12)
     umag = np.zeros((nx,ny))
     for i in range(nx):
         for j in range(ny):
@@ -366,7 +375,7 @@ def displacement_categorize(ufit, ax0=None, ax1=None, ax2=None):
         aa_radii.append(r)
         ax1.text(x0, y0, "{:.2f}".format(r), color='grey', fontsize='xx-small', horizontalalignment='center')
 
-    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, delta=delta, plotbool=False, include_aa=False, window_filter_bool=False)
+    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, plotbool=False, include_aa=False, window_filter_bool=False)
 
     no_aa_sp1mask = ((sp1mask.astype(int) - aa_mask.astype(int)) > 0).astype(int)
     contours = measure.find_contours(no_aa_sp1mask, 0.5)
@@ -444,9 +453,8 @@ def make_legend_categorized(ax=None, plotflag=True, boundary=0.5):
     ufit[:,:,0] = U[:,:]
     ufit[:,:,1] = V[:,:]
     boundary = boundary * np.max(U[:,:]) 
-    delta=(np.pi/12)
     aa_mask = get_aa_mask(ufit, boundary=boundary)
-    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, delta=delta, plotbool=False, include_aa=False, window_filter_bool=False)
+    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, plotbool=False, include_aa=False, window_filter_bool=False)
     colors = 225 * np.ones((nx, nx, 3)) #start white
     for i in range(nx):
         for j in range(nx):
@@ -484,7 +492,6 @@ def make_examplefig_categorized(ax=None, plotflag=True, boundary=0.5):
     u_cart = cartesian_to_rz_WZ(u_cart.copy(), sign_wrap=False)
     if ax is None: f, ax = plt.subplots()
     boundary = boundary * np.max(u_cart[:,:,0].flatten()) 
-    delta=(np.pi/12)
     aa_mask = get_aa_mask(u_cart, boundary=boundary, smooth=None)
     aa_radii = []
     contours = measure.find_contours(aa_mask, 0.5)
@@ -499,7 +506,7 @@ def make_examplefig_categorized(ax=None, plotflag=True, boundary=0.5):
         aa_radii.append(r)
         ax.text(x0, y0, "{:.2f}".format(r), color='grey', fontsize='xx-small', horizontalalignment='center')
 
-    sp1mask, sp2mask, sp3mask = get_sp_masks(u_cart, aa_mask, delta=delta, plotbool=False, include_aa=False, window_filter_bool=False)
+    sp1mask, sp2mask, sp3mask = get_sp_masks(u_cart, aa_mask, plotbool=False, include_aa=False, window_filter_bool=False)
 
     no_aa_sp1mask = ((sp1mask.astype(int) - aa_mask.astype(int)) > 0).astype(int)
     contours = measure.find_contours(no_aa_sp1mask, 0.5)

@@ -117,24 +117,18 @@ def get_aa_mask(ufit, boundary=0.75, plotbool=False, smooth=None):
     return ndimage.gaussian_filter(mask, 0.2)
 
 #USED!
-def get_sp_masks(ufit, aa_mask, delta=0.10, plotbool=False, include_aa=True, window_filter_bool=True, eps=1e-6):
-    # SP1 is within 0 +/-(pi/6 - delta)
-    # SP2 is within 2pi/6 +/-(pi/6 - delta)
-    # SP3 is within 4pi/6 +/-(pi/6 - delta)
-    # when delta=pi/6, no SP
-    # when delta=pi/12, equal SP and AB-type partitions ... delta' = pi/6 - delta
+def get_sp_masks(ufit, aa_mask, delta=np.pi/12, plotbool=False, include_aa=True, window_filter_bool=True, eps=1e-6):
+    # if delta = np.pi/6 complete partition
+    # if delta = np.pi/12 half into sp half into AB-type
     nx, ny, dim = ufit.shape
     uang = np.zeros((nx,ny))
     for i in range(nx):
         for j in range(ny):
             uang[i,j] = np.arctan(ufit[i,j,1]/(eps + ufit[i,j,0])) # cartesian!
-            if uang[i,j] < 0: uang[i,j] += 2*np.pi
-    mask_sp1 = ( (uang > 11*np.pi/6 + delta) | (uang < np.pi/6   - delta) ) # for 0 +/- delta'
-    mask_sp2 = ( (uang >    np.pi/6 + delta) & (uang < 3*np.pi/6 - delta) ) # for 2pi/6 +/- delta'
-    mask_sp3 = ( (uang >  3*np.pi/6 + delta) & (uang < 5*np.pi/6 - delta) ) # for 4pi/6 +/- delta'
-    mask_sp1 = mask_sp1 | ( (uang > 5*np.pi/6 + delta) & (uang <  7*np.pi/6 - delta) ) # for 6pi/6 +/- delta'
-    mask_sp2 = mask_sp2 | ( (uang > 7*np.pi/6 + delta) & (uang <  9*np.pi/6 - delta) ) # for 10pi/6 +/- delta'
-    mask_sp3 = mask_sp3 | ( (uang > 9*np.pi/6 + delta) & (uang < 11*np.pi/6 - delta) ) # for 10pi/6 +/- delta'
+            if uang[i,j] < 0: uang[i,j] += 2*np.pi # uang now between 0 and 2pi
+    mask_sp1 = ( np.abs(uang - 0        ) < delta ) | ( np.abs(uang - np.pi     ) < delta ) | ( np.abs(uang - 2*np.pi) < delta )
+    mask_sp2 = ( np.abs(uang - np.pi/3  ) < delta ) | ( np.abs(uang - 4*np.pi/3 ) < delta ) 
+    mask_sp3 = ( np.abs(uang - 2*np.pi/3) < delta ) | ( np.abs(uang - 5*np.pi/3 ) < delta ) 
     if include_aa:
         mask_sp1 = mask_sp1 | aa_mask
         mask_sp2 = mask_sp2 | aa_mask
@@ -145,10 +139,11 @@ def get_sp_masks(ufit, aa_mask, delta=0.10, plotbool=False, include_aa=True, win
         mask_sp2 = window_filter(mask_sp2, 2, method=np.max)
         mask_sp3 = window_filter(mask_sp3, 2, method=np.max)
     if plotbool:
-        f, (ax1, ax2, ax3) = plt.subplots(1,3)
-        ax1.imshow(mask_sp1)
-        ax2.imshow(mask_sp2)
-        ax3.imshow(mask_sp3)
+        f, axes = plt.subplots(1,3)
+        axes = axes.flatten()
+        axes[0].imshow(mask_sp1, origin='lower')
+        axes[1].imshow(mask_sp2, origin='lower')
+        axes[2].imshow(mask_sp3, origin='lower')
         plt.show()
     return mask_sp1, mask_sp2, mask_sp3
 

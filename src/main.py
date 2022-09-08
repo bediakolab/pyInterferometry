@@ -21,7 +21,7 @@ from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
 from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_latticevec
 from strain import strain
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
-from io_utilities import DataSetContainer
+from io_utilities import DataSetContainer, compile_spreadsheet
 from virtual_df import virtualdf_main
 from interferometry_fitting import fit_full_hexagon, refit_full_hexagon_from_bin
 from io_utilities import unwrap_main
@@ -60,9 +60,11 @@ def main():
     for ds in dsets:
     
         print(counter, " ", ds.name) 
-        ds.set_sample_rotation()
 
-        if ds.check_has_raw() and boolquery("extract disks?"):
+        ########################################################
+        #### disk intensity extraction
+        ########################################################
+        if False and (not ds.check_has_diskset()) and ds.check_has_raw() and boolquery("extract disks?"):
             # do the vdf/disk extraction
             datacube, diskset = virtualdf_main(ds)
             datacube, scan_shape = ds.extract_raw()
@@ -71,39 +73,26 @@ def main():
             diskset = ds.diskset
             diskset.adjust_qspace_aspect_ratio(dp)
             ds.update_diskset(diskset)
-            ds.set_sample_rotation()
 
+        ########################################################
+        #### post vdf/disk extraction plots/analysis
+        ########################################################
         if ds.check_has_diskset():
-            # post vdf/disk extraction plots/analysis
+            ds.set_sample_rotation()
             ds.make_vdf_plots()
 
-        if ds.check_has_displacement():
-
-            # post displacement fitting plots/analysis
-            from interferometry_fitting import verify_dfs
-            coefs = ds.extract_coef_fit()
-            u = ds.extract_displacement_fit()
-            verify_dfs(ds.sanity_intfit, ds.diskset, coefs, cartesian_to_latticevec(u))
-            ds.make_displacement_plot(rewrite=False)
-            ds.make_categorize_plot()
-            ds.make_sanity_residuals()
-
-        elif ds.check_has_diskset() and boolquery("fit displacement (no bin)?"):
-            
+        ########################################################
+        #### displacement fitting
+        ########################################################
+        if False and (not ds.check_has_displacement()) and ds.check_has_diskset() and boolquery("fit displacement (no bin)?"):
             # do the fitting
-            # first fit binned by 2
             coefs, ufit = fit_full_hexagon(ds.diskset, 3)
             ds.update_parameter("FittingFunction", "A+Bcos^2+Csincos", "main")
             ds.update_parameter("RefitFromBinned", "False", "main")
             ds.update_parameter("DisplacementBasis", "Cartesian", "main")
             ds.update_displacement_fit(coefs, latticevec_to_cartesian(ufit.copy()))
-            ds.make_displacement_plot() 
-            ds.make_categorize_plot()    
-
-        elif ds.check_has_diskset() and boolquery("fit displacement (bin then refit)?"):
-            
-            # do the fitting
-            # first fit binned by 2
+        elif False and (not ds.check_has_displacement()) and ds.check_has_diskset() and boolquery("fit displacement (bin then refit)?"):
+            # do the fitting, first fit binned by 2
             coefs, ufitbin2 = fit_full_hexagon(ds.diskset, 3, binw=2)
             ds.update_parameter("FittingFunction", "A+Bcos^2+Csincos", "main")
             ds.update_parameter("RefitFromBinned", "True,Bin2", "main")
@@ -116,34 +105,42 @@ def main():
             ufit = latticevec_to_cartesian(ufit.copy())
             ds.update_parameter("DisplacementBasis", "Cartesian", "main")
             ds.update_displacement_fit(coefs, ufit)
-            ds.make_displacement_plot() 
+
+        ########################################################
+        #### post displacement fitting plots/analysis 
+        ########################################################
+        if ds.check_has_displacement():
+            
+            coefs, u = ds.extract_coef_fit(), ds.extract_displacement_fit()
+            ds.make_displacement_plot()
             ds.make_categorize_plot()
+            ds.make_sanity_residuals()
 
-        if ds.check_has_unwrapping():
-
-            # post unwrapping plots/analysis
-            ds.make_adjacency_plot()
-            rigid_dil, rigid_twist, rigid_gamma = ds.make_twist_plot()
-            ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil, rigid_gamma)
-            #ds.make_piezo_plots(rewrite=True)
-            #ds.get_strain_stats()
-
-        elif boolquery("unwrap?"): #ds.check_has_diskset() and 
-
+        ########################################################
+        #### unwrapping
+        ########################################################
+        if False and (not ds.check_has_unwrapping()) and ds.check_has_displacement() and boolquery("unwrap?"): 
             # do the unwrapping
             ufit, centers, adjacency_type = unwrap_main(ds)
             ds.update_unwraping(ufit, centers, adjacency_type)
+
+        ########################################################
+        #### post unwrapping plots/analysis 
+        ########################################################
+        if ds.check_has_unwrapping():
+
             ds.make_adjacency_plot()
             rigid_dil, rigid_twist, rigid_gamma = ds.make_twist_plot()
             ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil, rigid_gamma)
-            #ds.get_strain_stats()
-            #ds.make_piezo_plots(rewrite=True)
-            #ds.make_cropped_plots()
+            ds.make_piezo_plots()
+            ds.get_strain_stats()
+        
 
         counter += 1
 
 if __name__ == '__main__':
 
+    compile_spreadsheet()
     #ds = load_existing_dataset()
     #theta, hs, rigid_dil, rigid_twist = ds.make_twist_plot()
     #ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil)

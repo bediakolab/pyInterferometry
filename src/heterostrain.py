@@ -369,7 +369,7 @@ def fit_heterostrain(l1, l2, l3, poissonratio, a, delta, hbl=False, given_twist=
         return np.abs(theta_t) * 180/np.pi, None, np.abs(eps*100)
     elif hbl and given_twist is not None:
         L = np.mean([l1,l2,l3])
-        print('moire wl was {}'.format(L))
+        #print('moire wl was {}'.format(L))
         #print('moire twist {} degrees'.format(given_twist))
         #print('moire twist -> wl of {}'.format(1/(2*np.sin(given_twist * np.pi/180 * 0.5))))
         eps = (np.max([l1,l2,l3]) - np.min([l1,l2,l3]))/np.max([l1,l2,l3])
@@ -383,7 +383,7 @@ def fit_heterostrain(l1, l2, l3, poissonratio, a, delta, hbl=False, given_twist=
         comp_delta = (- gamma + np.sqrt(L**2 * gamma))/denom
         if comp_delta > 0: # using delta = aS/aL - 1 so want < 0
             comp_delta = (- gamma - np.sqrt(L**2 * gamma))/denom
-        print('lattice mismatch therefore {}%'.format(comp_delta*100))
+        #print('lattice mismatch therefore {}%'.format(comp_delta*100))
         return (comp_delta)*100, None, np.abs(eps*100)    
 
 

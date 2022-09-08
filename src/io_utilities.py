@@ -78,12 +78,33 @@ def manual_define_good_triangles(img, centers, adjacency_type):
     return (1-use_mask), use_tris, tris, tri_centers
 
 # unwraps and gets strain from a simple differentiation
-def unwrap_main(ds, flip=False, transp=True):
+def unwrap_main(ds, flip=False, transp=True, pad=1):
 
     centerdist, boundary_val, delta_val, combine_crit, spdist = 0.01, 0.3, 0.3, 0.0, 2.0
 
     if ds.u_wrapped is None: ds.extract_displacement_fit()
     u = ds.u_wrapped.copy()
+
+    if False:
+        from basis_utils import rotate_uvecs
+        #f, axes = plt.subplots(3,2)
+        #axes = axes.flatten()
+        #N = 50
+        #axes[0].quiver(ds.u_wrapped[:N,:N,0],ds.u_wrapped[:N,:N,1])
+        #displacement_colorplot(axes[1], ds.u_wrapped[:N,:N,:], sample_angle=0, quiverbool=True)
+        u_wrapped_t = np.zeros((ds.u_wrapped.shape[0], ds.u_wrapped.shape[1], ds.u_wrapped.shape[2]))
+        for i in range(ds.u_wrapped.shape[0]):
+            for j in range(ds.u_wrapped.shape[1]):
+                for d in range(ds.u_wrapped.shape[2]):
+                    u_wrapped_t[i,j,d] = ds.u_wrapped[j,i,d]
+        #axes[2].quiver(u_wrapped_t[:N,:N,0],u_wrapped_t[:N,:N,1])
+        #displacement_colorplot(axes[3], u_wrapped_t[:N,:N,:], sample_angle=0, quiverbool=True)
+        u_wrapped_t = rotate_uvecs(u_wrapped_t, ang=(-np.pi/3))
+        #axes[4].quiver(u_wrapped_t[:N,:N,0],u_wrapped_t[:N,:N,1])
+        #displacement_colorplot(axes[5], u_wrapped_t[:N,:N,:], sample_angle=0, quiverbool=True)
+        #plt.show()
+        if transp: u = u_wrapped_t
+        else: u = ds.u_wrapped.copy()
 
     while True:
         methodid = input("Method? \n1: voronoi (good for large twist data, P or AP) \n2: watershed (good for most AP data unless very large twist)\n").lower().strip()[0] 
@@ -101,26 +122,28 @@ def unwrap_main(ds, flip=False, transp=True):
 
     img = displacement_colorplot(None, u)
     crop_displacement(img, u)
+    u = u[pad:-pad, pad:-pad, :]
     nx, ny = u.shape[0], u.shape[1]
-    print(nx, ny)
-    if nx % 2 != 0: 
-        u = u[:nx-1, :ny-1]
+    n = np.min([nx, ny])
+    if n % 2 != 0: 
+        u = u[:n-1, :n-1]
         nx, ny = u.shape[0], u.shape[1]
-        print(nx, ny)
+    else:
+        u = u[:n, :n]
     assert(u.shape[0] % 2 == 0)
 
     if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
     u = cartesian_to_rz_WZ(u, sign_wrap=False)
-    if transp:
-        uorig = u.copy()
-        for i in range(uorig.shape[0]):
-            for j in range(uorig.shape[1]):
-                for d in range(uorig.shape[2]):
-                    u[i,j,d] = uorig[j,i,d]
+    print(u.shape)
     centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
     points = [ [c[1], c[0]] for c in centers ]
-    u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=True) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
+    #u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=False) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
     
+    f, axes = plt.subplots(1,2)
+    axes[0].quiver(u[:50,:50,0],u[:50,:50,1])
+    displacement_colorplot(axes[1], u[:50,:50,:], sample_angle=0, quiverbool=True)
+    plt.show()
+
     #print('WARNING NOT UNWRAPPING BOMB OUT TO SAVE ADJ MAT ONLY')
     #ds.update_unwraping(u, centers, adjacency_type)
     #f, ax = plt.subplots()
@@ -250,14 +273,17 @@ class DataSetContainer:
         self.piezoplotpath    = os.path.join(self.plotpath, "piezo_charge.png")
         self.piezoquiverpath  = os.path.join(self.plotpath, "piezo_polarization.png")
         self.piezohexplotpath = os.path.join(self.plotpath, "hex_piezocharge.png")
-        self.rotsanitypath    = os.path.join(self.plotpath, "sanity_gvector_rotation_check.png")
-        self.localsubplot     = os.path.join(self.plotpath, "sanity_local_substraction.png")
         self.subcroprotpath   = os.path.join(self.plotpath, "rotation_cropped_sub.png")
         self.subcropdilpath   = os.path.join(self.plotpath, "dilation_cropped_sub.png")
         self.subcropgammapath = os.path.join(self.plotpath, "shear_cropped_sub.png")
+
+        self.rotsanitypath    = os.path.join(self.plotpath, "sanity_gvector_rotation_check.png")
+        self.localsubplot     = os.path.join(self.plotpath, "sanity_local_substraction.png")
         self.sanity_intfit    = os.path.join(self.plotpath, "sanity_vdf_check2.png")
         self.sanity_vdf       = os.path.join(self.plotpath, "sanity_vdf_check.png")
         self.sanity_axes      = os.path.join(self.plotpath, "sanity_axes.png")
+        self.disp_orrientation_sanity =    os.path.join(self.plotpath, "sanity_disp_orrientation.png")
+        self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
 
         # fields to hold the data
         self.u_unwrap       = None     # set by extract_unwraping, update_unwrapping
@@ -280,15 +306,19 @@ class DataSetContainer:
         self.update_data_flags()
 
     def set_sample_rotation(self):
-        if self.check_parameter_is_set("SampleRotation"): 
-            return
+        #if self.check_parameter_is_set("SampleRotation"): 
+        #    return
         if not self.check_has_diskset(): 
             print("data has no diskset or specified sample rotation")
             return
         else:
             diskset = self.extract_diskset()
             mean_ang, stderr_ang = diskset.get_rotatation(True, self.rotsanitypath)
+            rotation_correction = 11.3
+            mean_ang = mean_ang + rotation_correction
+            print('Adding rotatational correctio of {} degrees to the measured sample rotation'.format(rotation_correction))
             self.update_parameter("SampleRotation", mean_ang )
+            self.update_parameter("K3toHAADFRotation_Used", rotation_correction )
             self.update_parameter("SampleRotationStdErr", stderr_ang )
 
     def update_data_flags(self):
@@ -466,6 +496,7 @@ class DataSetContainer:
         
         if self.is_hbl:
             twist_dp = self.extract_parameter("DiffractionPatternTwist", update_if_unset=True, param_type=float)
+            print('Using Diffraction pattern twist of {} degress, {} radians'.format(twist_dp, twist_dp * np.pi/180))
             self.update_parameter("AvgMoireMismatch", np.nanmean(deltas), "make_twist_plot")
             self.update_parameter("AvgHeteroStrainHBLProxy", np.nanmean(het_strain_proxies), "make_twist_plot")
             self.update_parameter("ErrMoireMismatch", stder(deltas), "make_twist_plot")
@@ -503,9 +534,9 @@ class DataSetContainer:
             for j in range(ny):  
                 if self.is_hbl: 
                     delta = delta_mat[i,j] * 1/100
-                    ang = twist_dp
-                    rigid_dilation[i,j] = delta 
-                    rigid_local_twist[i,j] = ang * (1 + delta/2)
+                    ang = twist_dp * np.pi/180
+                    rigid_dilation[i,j] = - delta 
+                    rigid_local_twist[i,j] = ang * (1 - delta/2)
                     rigid_gamma[i,j] = 0
                 else:
                     ang = theta_mat[i,j] * np.pi/180
@@ -528,11 +559,11 @@ class DataSetContainer:
         ax[2,0].axis('off')
         ax[2,0].set_aspect('equal')
         for n in range(len(triangles)):
-            if self.is_hbl:
+            if self.is_hbl and not np.isnan(deltas[n]):
                 ang = twist_dp
                 tc = tri_centers[n]
-                dil = delta_mat[i,j]
-                twist = ang * (1 + delta_mat[i,j]/2)
+                dil = deltas[n] * 1/100
+                twist = ang * (1 + dil/2)
                 g = 0
                 ax[1,0].text(tc[0], tc[1], "{:.2f}".format(twist*180/np.pi), color='grey', fontsize='xx-small', horizontalalignment='center')
                 ax[1,1].text(tc[0], tc[1], "{:.2f}".format(dil*100), color='grey', fontsize='xx-small', horizontalalignment='center')
@@ -599,10 +630,8 @@ class DataSetContainer:
     def make_categorize_plot(self, showflag=False):
         #if os.path.exists(self.catplotpath): return
         if self.u_wrapped is None: self.extract_displacement_fit()
-        u = latticevec_to_cartesian(self.u_wrapped.copy())
-        #u = self.u_wrapped.copy()
         f, ax = plt.subplots()
-        pAA, pSP1, pSP2, pSP3, pAB, rAA, eAA, wSP, eSP = disp_categorize_plot(u, ax)
+        pAA, pSP1, pSP2, pSP3, pAB, rAA, eAA, wSP, eSP = disp_categorize_plot(self.u_wrapped.copy(), ax)
         self.update_parameter("AAPercent", pAA, "make_categorize_plot")
         self.update_parameter("ABPercent", pAB, "make_categorize_plot")
         self.update_parameter("SP1Percent", pSP1, "make_categorize_plot")
@@ -641,7 +670,6 @@ class DataSetContainer:
         diskset = self.diskset
         I = diskset.df_set()
         if self.u_wrapped is None: self.extract_displacement_fit()
-        self.u_wrapped = cartesian_to_rz_WZ(self.u_wrapped, sign_wrap=False)
 
         g1  = np.array([ 0, 2/np.sqrt(3)])
         g2  = np.array([-1, 1/np.sqrt(3)])
@@ -660,10 +688,7 @@ class DataSetContainer:
             for i in range(self.u_wrapped.shape[0]):
                 for j in range(self.u_wrapped.shape[1]):
                     gvec = g[n][1] * g1 + g[n][0] * g2
-                    if transp:
-                        u    = [self.u_wrapped[j,i,0], self.u_wrapped[j,i,1]]
-                    else:
-                        u    = [self.u_wrapped[i,j,0], self.u_wrapped[i,j,1]]
+                    u    = [self.u_wrapped_raw[i,j,0], self.u_wrapped_raw[i,j,1]]
                     df_tot[i,j]   = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
                     df_tot[i,j]  += B[n] * (np.cos(np.pi * np.dot(gvec, u)))*(np.sin(np.pi * np.dot(gvec, u)))
                     df_Aonly[i,j] = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
@@ -685,8 +710,6 @@ class DataSetContainer:
             axes[n,2].imshow(dfsA[n], vmin=-1., vmax=1.)
             axes[n,3].imshow(dfsB[n], vmin=-1., vmax=1.)
             axes[n,4].imshow(I[n,:,:] - dfs[n], cmap='gray')
-            #print('max resid of ',  100*np.max(np.abs((I[n,:,:] - dfs[n])).flatten()), '%')
-            #print('mean resid of ', 100*np.mean(np.abs((I[n,:,:] - dfs[n])).flatten()), '%')
             mean_resid_all_disks.append( 100*np.mean(np.abs((I[n,:,:] - dfs[n])).flatten()) )
             axes[n,0].set_title('fit {}-{}{}'.format(n, g[n][1], g[n][0])); 
             axes[n,1].set_title('raw {}-{}{}'.format(n, g[n][1], g[n][0])); 
@@ -694,40 +717,23 @@ class DataSetContainer:
             axes[n,3].set_title('sincos'); 
             axes[n,4].set_title('resid'); 
         for n in range(6):
-            axes[n,5+0].set_title('fit {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-            axes[n,5+1].set_title('raw {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-            axes[n,5+2].set_title('cos2'); 
-            axes[n,5+3].set_title('sincos'); 
-            axes[n,5+4].set_title('resid'); 
-            axes[n,5+0].imshow(dfs[6+n], cmap='gray', vmin=0., vmax=1.)
-            axes[n,5+1].imshow(I[6+n,:,:], cmap='gray', vmin=0., vmax=1.)
-            axes[n,5+2].imshow(dfsA[6+n], vmin=-1., vmax=1.)
-            axes[n,5+3].imshow(dfsB[6+n], vmin=-1., vmax=1.)
-            axes[n,5+4].imshow(I[6+n,:,:] - dfs[6+n], cmap='gray')
-            #print('max resid of ',  100*np.max(np.abs((I[n+6,:,:] - dfs[n+6])).flatten()), '%')
-            #print('mean resid of ', 100*np.mean(np.abs((I[n+6,:,:] - dfs[n+6])).flatten()), '%')
-            mean_resid_all_disks.append( 100*np.mean(np.abs((I[n+6,:,:] - dfs[n+6])).flatten()) )
+            try:
+                axes[n,5+0].set_title('fit {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
+                axes[n,5+1].set_title('raw {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
+                axes[n,5+2].set_title('cos2'); 
+                axes[n,5+3].set_title('sincos'); 
+                axes[n,5+4].set_title('resid'); 
+                axes[n,5+0].imshow(dfs[6+n], cmap='gray', vmin=0., vmax=1.)
+                axes[n,5+1].imshow(I[6+n,:,:], cmap='gray', vmin=0., vmax=1.)
+                axes[n,5+2].imshow(dfsA[6+n], vmin=-1., vmax=1.)
+                axes[n,5+3].imshow(dfsB[6+n], vmin=-1., vmax=1.)
+                axes[n,5+4].imshow(I[6+n,:,:] - dfs[6+n], cmap='gray')
+                mean_resid_all_disks.append( 100*np.mean(np.abs((I[n+6,:,:] - dfs[n+6])).flatten()) )
+            except:
+                continue
 
         print("mean unsigned error is ", np.mean(mean_resid_all_disks), " percent") 
         plt.savefig(self.sanity_vdf, dpi=300)
-        plt.close('all')
-                
-        from basis_utils import rotate_uvecs
-        f, axes = plt.subplots(3,2)
-        axes = axes.flatten()
-        axes[0].quiver(self.u_wrapped[:,:,0],self.u_wrapped[:,:,1])
-        displacement_colorplot(axes[1], self.u_wrapped, sample_angle=0, quiverbool=True)
-        u_wrapped_t = np.zeros((self.u_wrapped.shape[0], self.u_wrapped.shape[1], self.u_wrapped.shape[2]))
-        for i in range(self.u_wrapped.shape[0]):
-            for j in range(self.u_wrapped.shape[1]):
-                for d in range(self.u_wrapped.shape[2]):
-                    u_wrapped_t[i,j,d] = self.u_wrapped[j,i,d]
-        axes[2].quiver(u_wrapped_t[:,:,0],u_wrapped_t[:,:,1])
-        displacement_colorplot(axes[3], u_wrapped_t, sample_angle=0, quiverbool=True)
-        u_wrapped_t = rotate_uvecs(u_wrapped_t, ang=(-np.pi/3))
-        axes[4].quiver(u_wrapped_t[:,:,0],u_wrapped_t[:,:,1])
-        displacement_colorplot(axes[5], u_wrapped_t, sample_angle=0, quiverbool=True)
-        plt.savefig(self.sanity_axes, dpi=300)
         plt.close('all')
  
     def make_displacement_plot(self, showflag=False, rewrite=False):
@@ -782,10 +788,12 @@ class DataSetContainer:
         #    print('{} exists so skipping'.format(self.dispplotpath))
         #    return
         if self.u_wrapped is None: self.extract_displacement_fit()
-        f, ax = plt.subplots(1,2)
+        f, ax = plt.subplots(1,3)
         sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
         img = displacement_colorplot(ax[0], self.u_wrapped, sample_angle=sample_angle, quiverbool=False)
         img = displacement_colorplot(ax[1], self.u_wrapped, sample_angle=sample_angle, quiverbool=True)
+        sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
+        ax[2].imshow(ndimage.rotate(img, -sample_angle, reshape=False), origin='lower') #, extent=[0,100,0,100]
         print("saving displacement plot to {}".format(self.dispplotpath)) 
         ax[0].set_title("$u_{raw}(x,y)$")    
         ax[0].set_xlabel("$x(pixels)$")  
@@ -793,21 +801,24 @@ class DataSetContainer:
         ax[1].set_title("$u_{raw}(x,y)$")    
         ax[1].set_xlabel("$x(pixels)$") 
         ax[1].set_ylabel("$y(pixels)$")
+        ax[2].set_title("$u(x||a_1,y)$")   
+        ax[2].set_xlabel("$x||a_1$") 
+        ax[2].set_ylabel("$y$")
         if showflag: 
             plt.show() 
         else:
             plt.savefig(self.dispplotpath, dpi=300)
             plt.close('all')
 
-    def make_piezo_plots_dep(self, rewrite=True):
+    def make_piezo_plots(self, rewrite=True):
 
         if self.is_hbl: 
             print('skipping HBL piezocharge calculations')
             return 
 
-        #if os.path.exists(self.piezoplotpath) and not rewrite: 
-        #    print('{} exists so skipping'.format(self.piezoplotpath))
-        #    return
+        if os.path.exists(self.piezoplotpath) and not rewrite: 
+            print('{} exists so skipping'.format(self.piezoplotpath))
+            return
 
         if self.u_unwrap is None: self.extract_unwraping()  
         sigma = self.extract_parameter("SmoothingSigma",      update_if_unset=True, param_type=float)
@@ -852,7 +863,6 @@ class DataSetContainer:
 
         # get the averaged strains
         u, scaled_u, _, _, _ = self.extract_strain()
-
         tri_centers, thetas, het_strains, deltas, het_strain_proxies = extract_twist_hetstrain(self)
         mask, use_tris, tris, _ = manual_define_good_triangles(piezo_top, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
         uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False)
@@ -884,7 +894,7 @@ class DataSetContainer:
         im = axes[0].imshow(avg_piezo, origin='lower', cmap=self.piezo_colormap, vmax=lim, vmin=-lim)
         plt.colorbar(im, ax=axes[0], orientation='vertical')
         axes[0].set_title('$<\\rho_{piezo}^{top}>%$')  
-        im = axes[1].imshow(counter, origin='lower', cmap=self.piezo_colormap)
+        im = axes[1].imshow(counter, origin='lower', cmap=self.counter_colormap)
         plt.colorbar(im, ax=axes[1], orientation='vertical')
         axes[1].set_title('counts')
         for ax in axes: ax.axis('off')
@@ -1048,12 +1058,25 @@ class DataSetContainer:
         rig_gamma = rigid_gamma * 100
         rig_theta = rigid_local_twist * 180/np.pi
         u, scaled_u, gamma, theta, dil = self.extract_strain(smoothbool=True, subtract=False)
+        if np.nanmean(theta.flatten()) < 0: theta *= -1 #convention positive dilation overall, diverging, will substract from rigid
+        if np.nanmean(dil.flatten()) < 0: dil *= -1 #convention positive dilation overall, diverging, will substract from rigid
+
         print('mean twist ', np.nanmean(theta.flatten()))
         print('mean dilation ',np.nanmean(dil.flatten()))
         print('mean gamma ',np.nanmean(gamma.flatten()))
+        print('rigid twist ',np.nanmean(rig_theta.flatten()))
+        print('rigid dilation ',np.nanmean(rig_dil.flatten()))
+        print('rigid gamma ',np.nanmean(rig_gamma.flatten()))        
+        print('doing local subtractions')
+        subt = theta - rig_theta[:theta.shape[0], :theta.shape[1]]
+        subd = dil - rig_dil[:dil.shape[0], :dil.shape[1]]
+        subg =  gamma - rig_gamma[:gamma.shape[0], :gamma.shape[1]]
+        print('sub twist ',np.nanmean(subt.flatten()))
+        print('sub dilation ',np.nanmean(subd.flatten()))
+        print('sub gamma ',np.nanmean(subg.flatten())) 
 
-        if np.nanmean(theta.flatten()) < 0: theta *= -1
-        if np.nanmin(dil.flatten()) < 0: dil *= -1
+        assert(np.nanmean(dil.flatten()) > 0)
+        assert(np.nanmean(theta.flatten()) > 0)
 
         def make_subplot(axis, title, matrix, center_colormap=True):
             if center_colormap: 
@@ -1080,11 +1103,6 @@ class DataSetContainer:
         plt.savefig(self.localsubplot, dpi=300)
         plt.close('all')
 
-        print('rigid twist ',np.nanmean(rig_theta.flatten()))
-        print('rigid dilation ',np.nanmean(rig_dil.flatten()))
-        print('rigid gamma ',np.nanmean(rig_gamma.flatten()))
-        
-        print('doing local subtractions')
         mask, use_tris, tris, tri_centers = manual_define_good_triangles(theta, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
         img = displacement_colorplot(None, u)
         for i in range(mask.shape[0]):
@@ -1374,15 +1392,19 @@ class DataSetContainer:
         self.raw_data = data
         return data, [scan_shape0, scan_shape1]
 
-    def extract_parameter(self, field, force_set=False, update_if_unset=False, param_type=str):
+    def extract_parameter(self, field, force_set=False, update_if_unset=False, param_type=str, default_value=None):
         self.param_dictionary, self.parameter_dict_comments = parse_parameter_file(self.parampath)
+        additional_keys = ['HeteroBilayer']
         if field not in self.param_dictionary.keys():
-            print('parameter {} is unrecognized'.format(field))
+            if field not in additional_keys: print('WARNING parameter {} is unrecognized'.format(field))
             value = default_parameter_filler
         else: 
             value = self.param_dictionary[field]
         if value == default_parameter_filler: 
-            if update_if_unset: 
+            if default_value is not None:
+                    value = default_value
+                    self.update_parameter(field, newvalue=value, comment="default")
+            elif update_if_unset: 
                 value = self.update_parameter(field) # set the parameter if unset
             elif force_set:
                 print('ERROR: required parameter {} is unset'.format(field))
@@ -1390,8 +1412,7 @@ class DataSetContainer:
             else:
                 value = None
         if value is not None and not isinstance(value, param_type):
-            print('ERROR: parameter {} of value {} is not of type {}, instead {}'.format(field, value, param_type, type(value)))
-            exit(1)
+            print('WARNING: parameter {} of value {} is not of type {}, instead {}'.format(field, value, param_type, type(value)))
         return value
 
     def check_parameter_is_set(self, field):
@@ -1419,7 +1440,7 @@ class DataSetContainer:
             with open(filepath, 'rb') as f: self.diskset = pickle.load(f)
             return self.diskset
 
-    def extract_unwraping(self, hbl_correct=False):
+    def extract_unwraping(self, hbl_correct=True, spcorrection=True):
         if not self.check_has_unwrapping():
             print("ERROR: {} has no unwrapping file.".format(self.name))
             exit(1)
@@ -1429,16 +1450,45 @@ class DataSetContainer:
             with open(filepath, 'rb') as f: d = pickle.load(f)
             u, centers, adjacency_type = d[0], d[1], d[2]
             self.u_unwrap, self.centers, self.adjacency_type = u, centers, adjacency_type
+            #self.u_unwrap, _, self.adjacency_type = automatic_sp_rotation(u, centers, adjacency_type)
             if hbl_correct and self.is_hbl:
+                #u_wrapped_t = np.zeros((self.u_unwrap.shape[0], self.u_unwrap.shape[1], self.u_unwrap.shape[2]))
+                #for i in range(self.u_wrapped.shape[0]):
+                #    for j in range(self.u_wrapped.shape[1]):
+                #        for d in range(self.u_wrapped.shape[2]):
+                #            u_wrapped_t[i,j,d] = self.u_wrapped[j,i,d]
                 u = -1 * rotate_uvecs(u, ang=-1/3*np.pi) # -1 so diverging by default, rotate so sp1 horizontal
                 for i in range(adjacency_type.shape[0]):
                     for j in range(adjacency_type.shape[0]):
                         if adjacency_type[i,j] > 0: adjacency_type[i,j] = ((adjacency_type[i,j]+1)%3)+1 #123->312
                 self.u_unwrap, self.centers, self.adjacency_type = u, centers, adjacency_type
-            #f, ax = plt.subplots(); ax.quiver(self.u_unwrap[:,:,0], self.u_unwrap[:,:,1]); plt.show()
+
+            if spcorrection:
+                ang = self.extract_parameter("UnwrapSPCorrectionRotation", default_value=0, param_type=float)
+                assert(np.round(ang,2) in [np.round(v,2) for v in [-np.pi/3, np.pi/3, -2*np.pi/3, 2*np.pi/3, 0]])
+                self.u_unwrap = rotate_uvecs(self.u_unwrap, ang=ang)    
+                if np.round(ang,2) in [np.round(-1/3*np.pi), np.round(2/3*np.pi)]: 
+                    for i in range(adjacency_type.shape[0]):
+                        for j in range(adjacency_type.shape[0]):
+                            if adjacency_type[i,j] > 0: adjacency_type[i,j] = ((adjacency_type[i,j])%3)+1 #123->231
+                elif np.round(ang,2) in [np.round(1/3*np.pi), np.round(-2/3*np.pi)]: 
+                    for i in range(adjacency_type.shape[0]):
+                        for j in range(adjacency_type.shape[0]):
+                            if adjacency_type[i,j] > 0: adjacency_type[i,j] = ((adjacency_type[i,j]+1)%3)+1 #123->312
+            
+            f, ax = plt.subplots(1,2); 
+            ax[1].set_title('unwrap'); 
+            img = displacement_colorplot(ax[0], self.u_unwrap, quiverbool=True); 
+            for i in range(img.shape[0]):
+                for j in range(img.shape[1]):
+                    if np.isnan(img[i,j,0]): img[i,j,:] = 0 
+            sample_angle = self.extract_parameter("SampleRotation", force_set=True, param_type=float)
+            ax[1].imshow(ndimage.rotate(img, -sample_angle, reshape=False), origin='lower') 
+            plt.savefig(self.unwrap_orrientation_sanity, dpi=300)
+            plt.close('all')
             return self.u_unwrap, self.centers, self.adjacency_type
 
-    def extract_displacement_fit(self):
+    def extract_displacement_fit(self, transp=False):
         if not self.check_has_displacement():
             print("ERROR: {} has no displacement file.".format(self.name))
             exit(1)
@@ -1451,6 +1501,27 @@ class DataSetContainer:
             if self.extract_parameter("DisplacementBasis", param_type=str) != "Cartesian":
                 print('DISPLCEMENT BASIS CHANGE LV->CART')
                 self.u_wrapped = latticevec_to_cartesian(self.u_wrapped)
+            self.u_wrapped_raw = self.u_wrapped.copy()
+            self.u_wrapped = cartesian_to_rz_WZ(self.u_wrapped, sign_wrap=False)
+            from basis_utils import rotate_uvecs
+            ang = 0 # self.extract_parameter("DispSPCorrectionRotation", default_value=np.pi/3, param_type=float)
+            assert(np.round(ang,2) in [np.round(v,2) for v in [-np.pi/3, np.pi/3, -2*np.pi/3, 2*np.pi/3, 0]])
+            if transp:
+                u_wrapped_t = np.zeros((self.u_wrapped.shape[0], self.u_wrapped.shape[1], self.u_wrapped.shape[2]))
+                for i in range(self.u_wrapped.shape[0]):
+                    for j in range(self.u_wrapped.shape[1]):
+                        for d in range(self.u_wrapped.shape[2]):
+                            u_wrapped_t[i,j,d] = self.u_wrapped[j,i,d]
+                self.u_wrapped = rotate_uvecs(u_wrapped_t, ang=ang)
+            else:
+                self.u_wrapped = rotate_uvecs(self.u_wrapped, ang=ang)
+            f, ax = plt.subplots(1,2); 
+            img = displacement_colorplot(ax[0], self.u_wrapped); 
+            ax[0].set_title('fit'); 
+            sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
+            ax[1].imshow(ndimage.rotate(img, -sample_angle, reshape=False), origin='lower') 
+            plt.savefig(self.disp_orrientation_sanity, dpi=300)
+            plt.close('all')
             return self.u_wrapped
 
     def extract_coef_fit(self):
