@@ -314,7 +314,7 @@ class DataSetContainer:
         else:
             diskset = self.extract_diskset()
             mean_ang, stderr_ang = diskset.get_rotatation(True, self.rotsanitypath)
-            rotation_correction = 11.3
+            rotation_correction = -11.3
             mean_ang = mean_ang + rotation_correction
             print('Adding rotatational correctio of {} degrees to the measured sample rotation'.format(rotation_correction))
             self.update_parameter("SampleRotation", mean_ang )
