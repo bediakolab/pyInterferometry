@@ -1276,6 +1276,12 @@ class DataSetContainer:
                 self.update_parameter("MMXXPercent", aAA*100, "make_categorize_plot")
                 self.update_parameter("MXorXMPercent", (aXX+aMM)*100, "make_categorize_plot")
         else:
+            self.update_parameter("AvgSP1{}".format(straintype),   np.nanmean(aSP1), "get_strain_stats")
+            self.update_parameter("ErrSP1{}".format(straintype),   stder(aSP1), "get_strain_stats")
+            self.update_parameter("AvgSP2{}".format(straintype),   np.nanmean(aSP2), "get_strain_stats")
+            self.update_parameter("ErrSP2{}".format(straintype),   stder(aSP2), "get_strain_stats")
+            self.update_parameter("AvgSP3{}".format(straintype),   np.nanmean(aSP3), "get_strain_stats")
+            self.update_parameter("ErrSP3{}".format(straintype),   stder(aSP3), "get_strain_stats")
             if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
                 self.update_parameter("AvgXMMX{}".format(straintype), np.nanmean(aAA), "get_strain_stats")
                 self.update_parameter("ErrXMMX{}".format(straintype), stder(aAA), "get_strain_stats")
@@ -1283,15 +1289,13 @@ class DataSetContainer:
                 self.update_parameter("ErrMM{}".format(straintype),   stder(aMM), "get_strain_stats")
                 self.update_parameter("AvgXX{}".format(straintype),   np.nanmean(aXX), "get_strain_stats")
                 self.update_parameter("ErrXX{}".format(straintype),   stder(aXX), "get_strain_stats")
-                self.update_parameter("AvgSP{}".format(straintype),   np.nanmean(aSP1+aSP2+aSP3), "get_strain_stats")
-                self.update_parameter("ErrSP{}".format(straintype),   stder(aSP1+aSP2+aSP3), "get_strain_stats")
             if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
                 self.update_parameter("AvgMMXX{}".format(straintype),   np.nanmean(aAA), "get_strain_stats")
                 self.update_parameter("ErrMMXX{}".format(straintype),   stder(aAA), "get_strain_stats")
-                self.update_parameter("AvgMXorXM{}".format(straintype), np.nanmean(aMM+aXX), "get_strain_stats")
-                self.update_parameter("ErrMXorXM{}".format(straintype), stder(aMM+aXX), "get_strain_stats")
-                self.update_parameter("AvgSP{}".format(straintype),     np.nanmean(aSP1+aSP2+aSP3), "get_strain_stats")
-                self.update_parameter("ErrSP{}".format(straintype),     stder(aSP1+aSP2+aSP3), "get_strain_stats")
+                self.update_parameter("AvgMX{}".format(straintype), np.nanmean(aMM), "get_strain_stats")
+                self.update_parameter("ErrMX{}".format(straintype), stder(aMM), "get_strain_stats")
+                self.update_parameter("AvgXM{}".format(straintype), np.nanmean(aXX), "get_strain_stats")
+                self.update_parameter("ErrXM{}".format(straintype), stder(aXX), "get_strain_stats")
             
     def get_strain_stats_dep(self):
 
