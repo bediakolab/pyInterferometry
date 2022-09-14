@@ -78,10 +78,28 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
     gvecs1 = [ g1, g2, g1-g2 ]
     f = 1.0 #0.7
     linear_scale, cos2_scale = True, False
-    cvecs =  [[f, f*0.293014986, f*0.293014986], [0, f*0.6198545861, 0], [f*0.4,f*0.4,f]] 
+    #cvecs =  [[f, f*0.293014986, f*0.293014986], [0, f*0.6198545861, 0], [f*0.4,f*0.4,f]] 
+    cvecs =  [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     def luminance(v): 
         r,g,b = v[:]
         return (0.2126*r + 0.7152*g + 0.0722*b)
+    import colorsys
+    h1,s1,v1 = colorsys.rgb_to_hsv(*cvecs[0]);
+    h2,s2,v2 = colorsys.rgb_to_hsv(*cvecs[1]);
+    h3,s3,v3 = colorsys.rgb_to_hsv(*cvecs[2]);
+    h12_diff = np.max([h1,h2]) - np.min([h1,h2])
+    h32_diff = np.max([h3,h2]) - np.min([h3,h2])
+    h13_diff = np.max([h1,h3]) - np.min([h1,h3])
+    if h12_diff > 0.5: h12_diff = 1 - h12_diff 
+    if h32_diff > 0.5: h32_diff = 1 - h32_diff 
+    if h13_diff > 0.5: h13_diff = 1 - h13_diff 
+    #print(h12_diff, h32_diff, h13_diff) 
+    #print(luminance(cvecs[0]), luminance(cvecs[1]), luminance(cvecs[2]))     
+    #print(s1, s2, s3) 
+    #print(v1, v2, v3) 
+    #exit()
+    assert(np.abs(h12_diff - h32_diff) < 1e-5)
+    assert(np.abs(h32_diff - h13_diff) < 1e-5)
     assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[1])) < 1e-5)
     assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[2])) < 1e-5)
     colors1 = np.zeros((nx, ny, 3))
@@ -107,7 +125,7 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
             ax.quiver(uxrot, uyrot)
     return colors1
 
-def displacement_colorplot_old_cyan_magenta_yellow(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
+def displacement_colorplot_old(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
     nx, ny = Ux.shape
     g1 = np.array([ 0, 2/np.sqrt(3)])
