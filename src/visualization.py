@@ -76,7 +76,40 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
     g1 = np.array([ 0, 2/np.sqrt(3)])
     g2 = np.array([-1, 1/np.sqrt(3)])
     gvecs1 = [ g1, g2, g1-g2 ]
+    cvecs =  [[0.70, 0.70*0.293014986, 0.70*0.293014986], [0, 0.70*0.6198545861, 0], [0.70*0.4,0.70*0.4,0.70]] 
+    def luminance(v): 
+        r,g,b = v[:]
+        return (0.2126*r + 0.7152*g + 0.0722*b)
+    assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[1])) < 1e-5)
+    assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[2])) < 1e-5)
+    colors1 = np.zeros((nx, ny, 3))
+    for i in range(nx):
+        for j in range(ny):
+            for n in range(len(gvecs1)):
+                coef = 1 - (np.cos(np.pi * np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])))**2 #(between 0 and 1)
+                colors1[i,j,:] += coef * np.array(cvecs[n])
+            r, g, b = colors1[i,j,:]
+            assert((np.nanmax([r,g,b]) <= 1.0) and not np.isnan(Ux[i,j]))
+    if ax is not None:
+        if plot_hexagon_bool:
+            f = 2 * np.max(Ux) * g2[0]
+            colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0)
+        else: ax.imshow(colors1, origin='lower')
+        for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
+        if not plot_hexagon_bool and quiverbool: 
+            uxrot = np.cos(sample_angle) * Ux - np.sin(sample_angle) * Uy
+            uyrot = np.cos(sample_angle) * Uy + np.sin(sample_angle) * Ux
+            ax.quiver(uxrot, uyrot)
+    return colors1
+
+def displacement_colorplot_old_cyan_magenta_yellow(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
+    if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
+    nx, ny = Ux.shape
+    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g2 = np.array([-1, 1/np.sqrt(3)])
+    gvecs1 = [ g1, g2, g1-g2 ]
     cvecs =  [[1, 0, 0], [0, 1, 0], [0, 0, 1]] # r, g, b
+    # solitons will be [1, 0, 1], [1, 1, 0], [0, 1, 1] which are cmy
     colors1 = np.zeros((nx, ny, 3))
     for i in range(nx):
         for j in range(ny):
@@ -654,7 +687,8 @@ if __name__ == "__main__":
         #make_examplefig_categorized(ax[0])
         f, ax = plt.subplots()
         make_legend(ax, plotflag=False)
-        plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
+        plt.show()
+        #plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
         exit()
 
     replot_bool = boolquery("would you like to categorize the displacement fields for stats?")
