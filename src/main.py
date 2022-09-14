@@ -133,16 +133,15 @@ def main():
             rigid_dil, rigid_twist, rigid_gamma = ds.make_twist_plot()
             ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil, rigid_gamma)
             ds.make_piezo_plots()
-            ds.get_strain_stats()
-        
+            #ds.get_strain_stats()
 
         counter += 1
 
 if __name__ == '__main__':
 
-    compile_spreadsheet()
     #ds = load_existing_dataset()
     #theta, hs, rigid_dil, rigid_twist = ds.make_twist_plot()
     #ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil)
     main()
+    compile_spreadsheet()
    

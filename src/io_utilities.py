@@ -631,19 +631,40 @@ class DataSetContainer:
         #if os.path.exists(self.catplotpath): return
         if self.u_wrapped is None: self.extract_displacement_fit()
         f, ax = plt.subplots()
-        pAA, pSP1, pSP2, pSP3, pAB, rAA, eAA, wSP, eSP = disp_categorize_plot(self.u_wrapped.copy(), ax)
-        self.update_parameter("AAPercent", pAA, "make_categorize_plot")
-        self.update_parameter("ABPercent", pAB, "make_categorize_plot")
-        self.update_parameter("SP1Percent", pSP1, "make_categorize_plot")
-        self.update_parameter("SP2Percent", pSP2, "make_categorize_plot")
-        self.update_parameter("SP3Percent", pSP3, "make_categorize_plot")
-        self.update_parameter("AvgAAradius", rAA, "make_categorize_plot")
-        self.update_parameter("ErrAAradius", eAA, "make_categorize_plot")
-        self.update_parameter("AvgSPwidth", wSP, "make_categorize_plot")
-        self.update_parameter("ErrSPwidth", eSP, "make_categorize_plot")
-        t_1 = "{:.2f} % AA {:.2f} % AB {:.2f} % SP".format(pAA, pAB, pSP1+pSP2+pSP3)
-        t_2 = "{:.2f}+/-{:.2f} AAr (pix)  {:.2f}+/-{:.2f} SPw (pix)".format(rAA, eAA, wSP, eSP)
-        ax.set_title("{}\n{}".format(t_1, t_2))
+        pAA, pSP1, pSP2, pSP3, pXX, pMM, rAA, eAA, wSP, eSP = disp_categorize_plot(self.u_wrapped.copy(), ax)
+        if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
+            if pXX > pMM:
+                print('WARNING: flipping XX and MM since think that the hexagon was rotated')
+                pXX, pMM = pMM, pXX
+            self.update_parameter("XMMXPercent", pAA, "make_categorize_plot")
+            self.update_parameter("XXPercent", pXX, "make_categorize_plot")
+            self.update_parameter("MMPercent", pMM, "make_categorize_plot")
+            self.update_parameter("SP1Percent", pSP1, "make_categorize_plot")
+            self.update_parameter("SP2Percent", pSP2, "make_categorize_plot")
+            self.update_parameter("SP3Percent", pSP3, "make_categorize_plot")
+            self.update_parameter("AvgXMMXradius", rAA, "make_categorize_plot")
+            self.update_parameter("ErrXMMXradius", eAA, "make_categorize_plot")
+            self.update_parameter("AvgSPwidth", wSP, "make_categorize_plot")
+            self.update_parameter("ErrSPwidth", eSP, "make_categorize_plot")
+            t_1 = "{:.2f} % \\XMMX {:.2f} % \\XX {:.2f} % MM {:.2f} % SP".format(pAA, pXX, pMM, pSP1+pSP2+pSP3)
+            t_2 = "{:.2f}+/-{:.2f} XMMXr (pix)  {:.2f}+/-{:.2f} SPw (pix)".format(rAA, eAA, wSP, eSP)
+            ax.set_title("{}\n{}".format(t_1, t_2))
+        elif self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
+            self.update_parameter("MMXXPercent", pAA, "make_categorize_plot")
+            self.update_parameter("MXorXMPercent", pXX + pMM, "make_categorize_plot")
+            self.update_parameter("SP1Percent", pSP1, "make_categorize_plot")
+            self.update_parameter("SP2Percent", pSP2, "make_categorize_plot")
+            self.update_parameter("SP3Percent", pSP3, "make_categorize_plot")
+            self.update_parameter("AvgMMXXradius", rAA, "make_categorize_plot")
+            self.update_parameter("ErrMMXXradius", eAA, "make_categorize_plot")
+            self.update_parameter("AvgSPwidth", wSP, "make_categorize_plot")
+            self.update_parameter("ErrSPwidth", eSP, "make_categorize_plot")
+            t_1 = "{:.2f} % MMXX {:.2f} % MX or XM {:.2f} % SP".format(pAA, pXX + pMM, pSP1+pSP2+pSP3)
+            t_2 = "{:.2f}+/-{:.2f} MMXXr (pix)  {:.2f}+/-{:.2f} SPw (pix)".format(rAA, eAA, wSP, eSP)
+            ax.set_title("{}\n{}".format(t_1, t_2))
+        else:
+            print('Couldnt determine if material is p or ap!!, filepath error, bombing out')
+            exit()
         ax.set_xlabel("$x(pixels)$")  
         ax.set_ylabel("$y(pixels)$")
         if showflag:
@@ -1016,26 +1037,105 @@ class DataSetContainer:
         plt.savefig(savepath, dpi=300)
         plt.close('all')       
 
-    def make_hex_plot(self, axis, counts_axis, u, mask, values, centered, colormap, title):
+    def make_hex_plot(self, axis, counts_axis, u, mask, values, centered, colormap, title, partition_axis=None):
+
+        #u = self.u_unwrap       
         uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False)
+        #f, ax = plt.subplots()
+        #disp_categorize_plot(uvecs_cart, ax)
+        #plt.show()
         for i in range(mask.shape[0]):
             for j in range(mask.shape[1]):
-                if mask[i,j]: values[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan
+                if mask[i,j]: values[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan  
+        umag = np.zeros((uvecs_cart.shape[0],uvecs_cart.shape[1]))
+        for i in range(uvecs_cart.shape[0]):
+            for j in range(uvecs_cart.shape[1]):
+                umag[i,j] = (uvecs_cart[i,j,0]**2 + uvecs_cart[i,j,1]**2)**0.5     
+        boundary=(0.5 * np.nanmax(umag.flatten()) )    
+        #f, ax = plt.subplots()
+        #disp_categorize_plot(uvecs_cart, ax)
+        #plt.show()
+        #aa_mask = get_aa_mask(uvecs_cart, boundary=(0.5 * np.nanmax(umag.flatten()) ), smooth=None) 
+        #sp1mask, sp2mask, sp3mask, mm_mask, xx_mask = get_sp_masks(uvecs_cart, aa_mask, plotbool=False, exclude_aa=True, include_aa=False, window_filter_bool=False)
         start, spacing = 0.6, 25
         xrang = np.arange(-start,start+(1/spacing),1/spacing)
+        #print(xrang)
         N = len(xrang)
-        avg_vals, counter = np.zeros((N,N)), np.zeros((N,N))
+        avg_vals, counter, colors = np.zeros((N,N)), np.zeros((N,N)), np.zeros((N,N,3))
+        avg_ux, avg_uy, avg_ang = np.zeros((N,N)), np.zeros((N,N)), np.zeros((N,N))
+        eps = 1e-7
+        cAA, cSP1, cSP2, cSP3, cXX, cMM, cTot = eps,eps,eps,eps,eps,eps,eps 
+        AA_avg, SP1_avg, SP2_avg, SP3_avg, MM_avg, XX_avg = [],[],[],[],[],[]   
+
         for i in range(mask.shape[0]):
             for j in range(mask.shape[1]):
                 if not np.isnan(uvecs_cart[i,j,0]) and not np.isnan(uvecs_cart[i,j,1]):
                     ux_index = int(np.round((uvecs_cart[i,j,0]+start)*spacing))
                     uy_index = int(np.round((uvecs_cart[i,j,1]+start)*spacing))
+                    #print(uvecs_cart[i,j,:], xrang[ux_index], xrang[uy_index])
+                    avg_ux[ux_index, uy_index] += uvecs_cart[i,j,0]
+                    avg_uy[ux_index, uy_index] += uvecs_cart[i,j,1]
                     avg_vals[ux_index, uy_index] += values[i,j]
                     counter[ux_index, uy_index] += 1
+                    umax = (xrang[ux_index]**2 + xrang[uy_index]**2)**0.5
+                    uang = np.arctan(xrang[uy_index]/(1e-7 + xrang[ux_index])) # cartesian!
+                    uang = uang * 12/np.pi
+                    uang += 6
+                    if xrang[uy_index] < 0 : uang *= -1
+                    delta = 1
+                    avg_ang[ux_index, uy_index] = uang
+                    if umax < boundary: 
+                        AA_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [0, 0, 0] #k
+                        cAA += 1
+                    elif ( np.abs(uang - 6 ) < delta ) | ( np.abs(uang + 6) < delta ):
+                        SP1_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [0, 225, 225] # SP1 c
+                        cSP1 += 1
+                    elif ( np.abs(uang - 2 ) < delta ) | ( np.abs(uang + 2) < delta ) :
+                        SP2_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [225, 0, 225] # SP2 m
+                        cSP2 += 1  
+                    elif ( np.abs(uang - 10 ) < delta ) | ( np.abs(uang + 10) < delta ):
+                        SP3_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [225, 225, 0] #SP3 y
+                        cSP3 += 1
+                    elif ( np.abs(uang - 4) < delta ) | ( np.abs(uang - 8) < delta ) | ( np.abs(uang + 12) < delta ):
+                        XX_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [225, 0, 0] # XX r
+                        cXX += 1 
+                    elif ( np.abs(uang + 4)  < delta ) | ( np.abs(uang + 8) < delta ) | ( np.abs(uang - 12) < delta ):
+                        MM_avg.append(values[i,j])
+                        colors[ux_index, uy_index, :] = [0, 0, 255] # MM b
+                        cMM += 1 
+                    elif ( np.abs(uang)  < delta ):
+                        if xrang[ux_index] < 0: 
+                            MM_avg.append(values[i,j])
+                            colors[ux_index, uy_index, :] = [0, 0, 255] # MM b
+                            cMM += 1
+                        else:
+                            XX_avg.append(values[i,j])
+                            colors[ux_index, uy_index, :] = [225, 0, 0] # XX r
+                            cXX += 1 
+                    cTot += 1
+
+        pAA,pSP1,pSP2,pSP3,pMM,pXX = cAA/cTot,cSP1/cTot,cSP2/cTot,cSP3/cTot,cMM/cTot,cXX/cTot
+        #AA_avg, SP1_avg, SP2_avg, SP3_avg, MM_avg, XX_avg = AA_avg/cAA, SP1_avg/cSP1, SP2_avg/cSP2, SP3_avg/cSP3, MM_avg/cMM, XX_avg/cXX
+        percents = [cAA/cTot,cSP1/cTot,cSP2/cTot,cSP3/cTot,cMM/cTot,cXX/cTot]
+        averages = [AA_avg, SP1_avg, SP2_avg, SP3_avg, MM_avg, XX_avg]
         for i in range(N):
             for j in range(N):    
-                if counter[i,j] > 0: avg_vals[i, j] /= counter[i,j]
+                if counter[i,j] > 0: 
+                    avg_vals[i, j] /= counter[i,j]
+                    avg_ux[i, j] /= counter[i,j]
+                    avg_uy[i, j] /= counter[i,j]
                 else: avg_vals[i, j] = counter[i,j] = np.nan
+        if False: #averaging sanity
+            f, axes = plt.subplots(1,2)
+            axes[0].imshow(avg_ux)
+            axes[1].imshow(avg_uy)
+            plt.show()
+            exit()
         lim = np.nanmax(np.abs(avg_vals.flatten())) 
         if centered:
             im = axis.imshow(avg_vals, origin='lower', cmap=colormap, vmax=lim, vmin=-lim)
@@ -1049,8 +1149,14 @@ class DataSetContainer:
             counts_axis.set_title('counts') 
             counts_axis.axis('off')
             counts_axis.set_aspect('equal')
+        if partition_axis is not None: 
+            im = partition_axis.imshow(colors, origin='lower')
+            partition_axis.set_title('partition') 
+            partition_axis.axis('off')
+            partition_axis.set_aspect('equal')    
         axis.axis('off')
         axis.set_aspect('equal')
+        return percents, averages   
 
     def make_strainplots_localsubtraction(self, rigid_local_twist, rigid_dilation, rigid_gamma):
 
@@ -1125,9 +1231,13 @@ class DataSetContainer:
         self.make_strain_plot(gamma, True, self.gamma_colormap, '$\\gamma(\\%)$', self.cropgammapath, tris, use_tris)
         f, axes = plt.subplots(2,2)
         axes = axes.flatten()    
-        self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
-        self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$')
-        self.make_hex_plot(axes[1], axes[0], u, mask, gamma, True , self.gamma_colormap, '$<\\gamma>$')
+        percents, averages = self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
+        self.update_strain_stats(averages, "ReconRot")  
+        percents, averages = self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$')
+        self.update_strain_stats(averages, "Dil")  
+        percents, averages = self.make_hex_plot(axes[1], axes[0], u, mask, gamma, True , self.gamma_colormap, '$<\\gamma>$')
+        self.update_strain_stats(averages, "Gamma")  
+        self.update_strain_stats(percents, "Percent")
         print("saving hex plots to {}".format(self.hexplotpath))
         plt.savefig(self.hexplotpath, dpi=300)
         plt.close('all')
@@ -1141,14 +1251,49 @@ class DataSetContainer:
         self.make_strain_plot(gamma, True,  self.gamma_colormap, '$\\gamma(\\%)$', self.subcropgammapath, tris, use_tris)
         f, axes = plt.subplots(2,2)
         axes = axes.flatten()    
-        self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
-        self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$')
-        self.make_hex_plot(axes[1], axes[0], u, mask, gamma, True ,  self.gamma_colormap, '$<\\gamma>$')
+        percents, averages = self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
+        pAA,pSP1,pSP2,pSP3,pMM,pXX = percents[:]
+        self.update_strain_stats(averages, "SubReconRot")
+        percents, averages = self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$')  
+        self.update_strain_stats(averages, "SubDil")      
+        percents, averages = self.make_hex_plot(axes[1], axes[0], u, mask, gamma, True ,  self.gamma_colormap, '$<\\gamma>$')
+        self.update_strain_stats(averages, "SubGamma")  
         print("saving hex plots to {}".format(self.subhexplotpath))
         plt.savefig(self.subhexplotpath, dpi=300)
         plt.close('all')
 
-    def get_strain_stats(self):
+    def update_strain_stats(self, averages, straintype):
+        aAA,aSP1,aSP2,aSP3,aMM,aXX = averages[:]
+        if straintype == "Percent":
+            self.update_parameter("SP1Percent", aSP1*100, "make_categorize_plot")
+            self.update_parameter("SP2Percent", aSP2*100, "make_categorize_plot")
+            self.update_parameter("SP3Percent", aSP3*100, "make_categorize_plot")
+            if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
+                self.update_parameter("XMMXPercent", aAA*100, "make_categorize_plot")
+                self.update_parameter("XXPercent", aXX*100, "make_categorize_plot")
+                self.update_parameter("MMPercent", aMM*100, "make_categorize_plot")
+            if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
+                self.update_parameter("MMXXPercent", aAA*100, "make_categorize_plot")
+                self.update_parameter("MXorXMPercent", (aXX+aMM)*100, "make_categorize_plot")
+        else:
+            if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
+                self.update_parameter("AvgXMMX{}".format(straintype), np.nanmean(aAA), "get_strain_stats")
+                self.update_parameter("ErrXMMX{}".format(straintype), stder(aAA), "get_strain_stats")
+                self.update_parameter("AvgMM{}".format(straintype),   np.nanmean(aMM), "get_strain_stats")
+                self.update_parameter("ErrMM{}".format(straintype),   stder(aMM), "get_strain_stats")
+                self.update_parameter("AvgXX{}".format(straintype),   np.nanmean(aXX), "get_strain_stats")
+                self.update_parameter("ErrXX{}".format(straintype),   stder(aXX), "get_strain_stats")
+                self.update_parameter("AvgSP{}".format(straintype),   np.nanmean(aSP1+aSP2+aSP3), "get_strain_stats")
+                self.update_parameter("ErrSP{}".format(straintype),   stder(aSP1+aSP2+aSP3), "get_strain_stats")
+            if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
+                self.update_parameter("AvgMMXX{}".format(straintype),   np.nanmean(aAA), "get_strain_stats")
+                self.update_parameter("ErrMMXX{}".format(straintype),   stder(aAA), "get_strain_stats")
+                self.update_parameter("AvgMXorXM{}".format(straintype), np.nanmean(aMM+aXX), "get_strain_stats")
+                self.update_parameter("ErrMXorXM{}".format(straintype), stder(aMM+aXX), "get_strain_stats")
+                self.update_parameter("AvgSP{}".format(straintype),     np.nanmean(aSP1+aSP2+aSP3), "get_strain_stats")
+                self.update_parameter("ErrSP{}".format(straintype),     stder(aSP1+aSP2+aSP3), "get_strain_stats")
+            
+    def get_strain_stats_dep(self):
 
         scaleu, u, gamma, theta, dil = self.extract_strain()
         delta=(np.pi/12)
@@ -1158,50 +1303,89 @@ class DataSetContainer:
                 umag[i,j] = (u[i,j,0]**2 + u[i,j,1]**2)**0.5
         boundary = 0.5 * np.max(u.flatten()) 
         AAmask = get_aa_mask(u, boundary=boundary, smooth=None)
-        sp1mask, sp2mask, sp3mask = get_sp_masks(u, AAmask, delta=delta, include_aa=False, window_filter_bool=False)
+        sp1mask, sp2mask, sp3mask, mask_mm, mask_xx = get_sp_masks(u, AAmask, delta=delta, exclude_aa=True, include_aa=False, window_filter_bool=False)
         SPmask = ( (sp1mask.astype(int) + sp2mask.astype(int) + sp3mask.astype(int)) > 0 ).astype(int)
+        MMmask = mask_mm.astype(int) 
+        XXmask = mask_xx.astype(int) 
 
-        AARot, SPRot, ABRot = [], [], []
+        n_xx, n_mm = 0, 0
+        for i in range(XXmask.shape[0]):
+            for j in range(XXmask.shape[1]):
+                if MMmask[i,j]: n_mm += 1
+                if XXmask[i,j]: n_xx += 1
+        if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap' and (n_xx > n_mm):
+            print('WARNING: flipping XX and MM since think that the hexagon was rotated')
+            MMmask, XXmask = XXmask, MMmask
+
+        AARot, SPRot, XXRot, MMRot = [], [], [], []
         for i in range(u.shape[0]):
             for j in range(u.shape[1]):
                 if AAmask[i,j]: AARot.append(theta[i,j])
                 elif SPmask[i,j]: SPRot.append(theta[i,j])
-                else: ABRot.append(theta[i,j])
-  
-        self.update_parameter("AvgAAReconRot", np.nanmean(AARot), "get_strain_stats")
-        self.update_parameter("ErrAAReconRot", stder(AARot), "get_strain_stats")
-        self.update_parameter("AvgABReconRot", np.nanmean(ABRot), "get_strain_stats")
-        self.update_parameter("ErrABReconRot", stder(ABRot), "get_strain_stats")
-        self.update_parameter("AvgSPReconRot", np.nanmean(SPRot), "get_strain_stats")
-        self.update_parameter("ErrSPReconRot", stder(SPRot), "get_strain_stats")
-
-        AADil, SPDil, ABDil = [], [], []
+                elif MMmask[i,j]: MMRot.append(theta[i,j])
+                elif XXmask[i,j]: XXRot.append(theta[i,j])
+        AADil, SPDil, XXDil, MMDil = [], [], [], []
         for i in range(u.shape[0]):
             for j in range(u.shape[1]):
                 if AAmask[i,j]: AADil.append(dil[i,j])
                 elif SPmask[i,j]: SPDil.append(dil[i,j])
-                else: ABDil.append(dil[i,j])
-
-        self.update_parameter("AvgSPDil", np.nanmean(SPDil), "get_strain_stats")
-        self.update_parameter("ErrSPDil", stder(SPDil), "get_strain_stats")
-        self.update_parameter("AvgAADil", np.nanmean(AADil), "get_strain_stats")
-        self.update_parameter("ErrAADil", stder(AADil), "get_strain_stats")
-        self.update_parameter("AvgABDil", np.nanmean(ABDil), "get_strain_stats")
-        self.update_parameter("ErrABDil", stder(ABDil), "get_strain_stats")
-
-        AAGamma, SPGamma, ABGamma = [], [], []
+                elif MMmask[i,j]: MMDil.append(dil[i,j])
+                elif XXmask[i,j]: XXDil.append(dil[i,j])
+        AAGamma, SPGamma, XXGamma, MMGamma  = [], [], [], []
         for i in range(u.shape[0]):
             for j in range(u.shape[1]):
                 if AAmask[i,j]: AAGamma.append(gamma[i,j])
                 elif SPmask[i,j]: SPGamma.append(gamma[i,j])
-                else: ABGamma.append(gamma[i,j])
+                elif MMmask[i,j]: MMGamma.append(gamma[i,j])
+                elif XXmask[i,j]: XXGamma.append(gamma[i,j])
+  
+        if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
 
-        self.update_parameter("AvgSPGamma", np.nanmean(SPGamma), "get_strain_stats")
-        self.update_parameter("ErrSPGamma", stder(SPGamma), "get_strain_stats")
-        self.update_parameter("AvgAAGamma", np.nanmean(AAGamma), "get_strain_stats")
-        self.update_parameter("ErrAAGamma", stder(AAGamma), "get_strain_stats")
-        self.update_parameter("AvgABGamma", np.nanmean(ABGamma), "get_strain_stats")
-        self.update_parameter("ErrABGamma", stder(ABGamma), "get_strain_stats")
+            self.update_parameter("AvgXMMXReconRot", np.nanmean(AARot), "get_strain_stats")
+            self.update_parameter("ErrXMMXReconRot", stder(AARot), "get_strain_stats")
+            self.update_parameter("AvgMMReconRot", np.nanmean(MMRot), "get_strain_stats")
+            self.update_parameter("ErrMMReconRot", stder(MMRot), "get_strain_stats")
+            self.update_parameter("AvgXXReconRot", np.nanmean(XXRot), "get_strain_stats")
+            self.update_parameter("ErrXXReconRot", stder(XXRot), "get_strain_stats")
+            self.update_parameter("AvgSPReconRot", np.nanmean(SPRot), "get_strain_stats")
+            self.update_parameter("ErrSPReconRot", stder(SPRot), "get_strain_stats")
+            self.update_parameter("AvgSPDil", np.nanmean(SPDil), "get_strain_stats")
+            self.update_parameter("ErrSPDil", stder(SPDil), "get_strain_stats")
+            self.update_parameter("AvgXMMXDil", np.nanmean(AADil), "get_strain_stats")
+            self.update_parameter("ErrXMMXDil", stder(AADil), "get_strain_stats")
+            self.update_parameter("AvgMMDil", np.nanmean(MMDil), "get_strain_stats")
+            self.update_parameter("ErrMMDil", stder(MMDil), "get_strain_stats")
+            self.update_parameter("AvgXXDil", np.nanmean(XXDil), "get_strain_stats")
+            self.update_parameter("ErrXXDil", stder(XXDil), "get_strain_stats")
+            self.update_parameter("AvgSPGamma", np.nanmean(SPGamma), "get_strain_stats")
+            self.update_parameter("ErrSPGamma", stder(SPGamma), "get_strain_stats")
+            self.update_parameter("AvgXMMXGamma", np.nanmean(AAGamma), "get_strain_stats")
+            self.update_parameter("ErrXMMXGamma", stder(AAGamma), "get_strain_stats")
+            self.update_parameter("AvgMMGamma", np.nanmean(MMGamma), "get_strain_stats")
+            self.update_parameter("ErrMMGamma", stder(MMGamma), "get_strain_stats")
+            self.update_parameter("AvgXXGamma", np.nanmean(XXGamma), "get_strain_stats")
+            self.update_parameter("ErrXXGamma", stder(XXGamma), "get_strain_stats")
+
+        elif self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
+
+            self.update_parameter("AvgMMXXReconRot", np.nanmean(AARot), "get_strain_stats")
+            self.update_parameter("ErrMMXXReconRot", stder(AARot), "get_strain_stats")
+            self.update_parameter("AvgMXorXMReconRot", np.nanmean(MMRot+XXRot), "get_strain_stats")
+            self.update_parameter("ErrMXorXMReconRot", stder(MMRot+XXRot), "get_strain_stats")
+            self.update_parameter("AvgSPReconRot", np.nanmean(SPRot), "get_strain_stats")
+            self.update_parameter("ErrSPReconRot", stder(SPRot), "get_strain_stats")
+            self.update_parameter("AvgSPDil", np.nanmean(SPDil), "get_strain_stats")
+            self.update_parameter("ErrSPDil", stder(SPDil), "get_strain_stats")
+            self.update_parameter("AvgMMXXDil", np.nanmean(AADil), "get_strain_stats")
+            self.update_parameter("ErrMMXXDil", stder(AADil), "get_strain_stats")
+            self.update_parameter("AvgMXorXMDil", np.nanmean(MMDil+XXDil), "get_strain_stats")
+            self.update_parameter("ErrMXorXMDil", stder(MMDil+XXDil), "get_strain_stats")
+            self.update_parameter("AvgSPGamma", np.nanmean(SPGamma), "get_strain_stats")
+            self.update_parameter("ErrSPGamma", stder(SPGamma), "get_strain_stats")
+            self.update_parameter("AvgMMXXGamma", np.nanmean(AAGamma), "get_strain_stats")
+            self.update_parameter("ErrMMXXGamma", stder(AAGamma), "get_strain_stats")
+            self.update_parameter("AvgMXorXMGamma", np.nanmean(MMGamma+XXGamma), "get_strain_stats")
+            self.update_parameter("ErrMXorXMGamma", stder(MMGamma+XXGamma), "get_strain_stats")
      
     def make_cropped_plots_dep(self):
         

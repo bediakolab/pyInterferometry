@@ -117,7 +117,7 @@ def get_aa_mask(ufit, boundary=0.75, plotbool=False, smooth=None):
     return ndimage.gaussian_filter(mask, 0.2)
 
 #USED!
-def get_sp_masks(ufit, aa_mask, delta=np.pi/12, plotbool=False, include_aa=True, window_filter_bool=True, eps=1e-6):
+def get_sp_masks(ufit, aa_mask, delta=np.pi/12, plotbool=False, include_aa=True, exclude_aa=False, window_filter_bool=True, eps=1e-6):
     # if delta = np.pi/6 complete partition
     # if delta = np.pi/12 half into sp half into AB-type
     nx, ny, dim = ufit.shape
@@ -129,23 +129,50 @@ def get_sp_masks(ufit, aa_mask, delta=np.pi/12, plotbool=False, include_aa=True,
     mask_sp1 = ( np.abs(uang - 0        ) < delta ) | ( np.abs(uang - np.pi     ) < delta ) | ( np.abs(uang - 2*np.pi) < delta )
     mask_sp2 = ( np.abs(uang - np.pi/3  ) < delta ) | ( np.abs(uang - 4*np.pi/3 ) < delta ) 
     mask_sp3 = ( np.abs(uang - 2*np.pi/3) < delta ) | ( np.abs(uang - 5*np.pi/3 ) < delta ) 
+    mask_xx = np.zeros((ufit.shape[0], ufit.shape[1]))
+    mask_mm = np.zeros((ufit.shape[0], ufit.shape[1]))
+
+    """
+    for i in range(nx):
+        for j in range(ny):
+            uang[i,j] = (np.arctan(ufit[i,j,1]/(1e-7 + ufit[i,j,0])) * 12/np.pi) + 6
+            if ufit[i,j,1] < 0 : uang[i,j] *= -1
+    mask_sp1 = ( np.abs(uang - 0 ) < 1 ) | ( np.abs(uang - 12) < 1 ) | ( np.abs(uang + 12) < 1 )
+    mask_sp2 = ( np.abs(uang - 4 ) < 1 ) | ( np.abs(uang + 4) < 1 ) 
+    mask_sp3 = ( np.abs(uang - 8 ) < 1 ) | ( np.abs(uang + 8) < 1 )    
+    """
+
     if include_aa:
         mask_sp1 = mask_sp1 | aa_mask
         mask_sp2 = mask_sp2 | aa_mask
         mask_sp3 = mask_sp3 | aa_mask
+        mask_xx = mask_xx | aa_mask
+        mask_mm = mask_mm | aa_mask
+
+    if exclude_aa:
+        mask_sp1 = ((mask_sp1.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)
+        mask_sp2 = ((mask_sp2.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)
+        mask_sp3 = ((mask_sp3.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)
+        mask_xx  = ((mask_xx.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)
+        mask_mm  = ((mask_mm.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)
+            
     if window_filter_bool:
         from utils import window_filter
         mask_sp1 = window_filter(mask_sp1, 2, method=np.max)
         mask_sp2 = window_filter(mask_sp2, 2, method=np.max)
         mask_sp3 = window_filter(mask_sp3, 2, method=np.max)
+        mask_xx = window_filter(mask_xx, 2, method=np.max)
+        mask_mm = window_filter(mask_mm, 2, method=np.max)
     if plotbool:
-        f, axes = plt.subplots(1,3)
+        f, axes = plt.subplots(1,5)
         axes = axes.flatten()
         axes[0].imshow(mask_sp1, origin='lower')
         axes[1].imshow(mask_sp2, origin='lower')
         axes[2].imshow(mask_sp3, origin='lower')
+        axes[3].imshow(mask_xx, origin='lower')
+        axes[4].imshow(mask_mm, origin='lower')
         plt.show()
-    return mask_sp1, mask_sp2, mask_sp3
+    return mask_sp1, mask_sp2, mask_sp3, mask_mm, mask_xx
 
 def get_peak_mask(nx, ny, peaks, diskset, dp, dsnum, radius_factor=1.15):
     nspots = len(peaks.data['qy'])

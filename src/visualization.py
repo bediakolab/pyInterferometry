@@ -245,7 +245,7 @@ def disp_categorize_plot(ufit, ax): #want cartesian u
     for i in range(nx):
         for j in range(ny):
             umag[i,j] = (ufit[i,j,0]**2 + ufit[i,j,1]**2)**0.5
-    boundary = 0.5 * np.max(umag.flatten()) 
+    boundary = 0.5 * np.nanmax(umag.flatten()) 
     aa_mask = get_aa_mask(ufit, boundary=boundary, smooth=None)
     aa_radii = []
     contours = measure.find_contours(aa_mask, 0.5)
@@ -269,7 +269,7 @@ def disp_categorize_plot(ufit, ax): #want cartesian u
         aa_radii.append(r)
         ax.text(x0, y0, "{:.2f}".format(r), color='grey', fontsize='xx-small', horizontalalignment='center')
 
-    sp1mask, sp2mask, sp3mask = get_sp_masks(ufit, aa_mask, plotbool=False, include_aa=False, window_filter_bool=False)
+    sp1mask, sp2mask, sp3mask, mm_mask, xx_mask = get_sp_masks(ufit, aa_mask, plotbool=False, exclude_aa=True, include_aa=False, window_filter_bool=False)
     no_aa_sp1mask = ((sp1mask.astype(int) - aa_mask.astype(int)) > 0).astype(int)
     contours = measure.find_contours(no_aa_sp1mask, 0.5)
     sp_widths = []
@@ -309,7 +309,7 @@ def disp_categorize_plot(ufit, ax): #want cartesian u
         except: continue 
     
     spmask = ( (sp1mask + sp2mask + sp3mask) > 0 ).astype(int)
-    n_aa, n_sp1, n_sp2, n_sp3, n_ab = 0, 0, 0, 0, 0
+    n_aa, n_sp1, n_sp2, n_sp3, n_ab, n_xx, n_mm = 0, 0, 0, 0, 0, 0, 0
     colors = 225 * np.ones((nx, ny, 3)) #start white
     for i in range(nx):
         for j in range(ny):
@@ -325,18 +325,21 @@ def disp_categorize_plot(ufit, ax): #want cartesian u
             elif sp3mask[i,j]: 
                 colors[i,j,:] = [225, 225, 0] #y
                 n_sp3 += 1
-            else: 
-                colors[i,j,:] = [220,220,220] #grey
-                n_ab += 1
+            elif mm_mask[i,j]: 
+                colors[i,j,:] = [225, 0, 0] #r
+                n_mm += 1
+            elif xx_mask[i,j]: 
+                colors[i,j,:] = [225, 225, 225] #white
+                n_xx += 1
 
-    n_tot = np.sum([n_aa, n_sp1, n_sp2, n_sp3, n_ab])
-    pAA, pSP1, pSP2, pSP3, pAB = 100 * n_aa/n_tot, 100 * n_sp1/n_tot, 100 * n_sp2/n_tot, 100 * n_sp3/n_tot, 100 * n_ab/n_tot
+    n_tot = np.sum([n_aa, n_sp1, n_sp2, n_sp3, n_xx, n_mm])
+    pAA, pSP1, pSP2, pSP3, pXX, pMM = 100 * n_aa/n_tot, 100 * n_sp1/n_tot, 100 * n_sp2/n_tot, 100 * n_sp3/n_tot, 100 * n_xx/n_tot, 100 * n_mm/n_tot
     aa_radii = [el for el in aa_radii if not np.isnan(el)]
     sp_widths = [el for el in aa_radii if not np.isnan(el)]
     rAA, eAA, wSP, eSP = np.mean(aa_radii), np.std(aa_radii, ddof=1) / np.sqrt(np.size(aa_radii)), np.mean(sp_widths), np.std(sp_widths, ddof=1) / np.sqrt(np.size(sp_widths))
     ax.imshow(colors, origin='lower')
     for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
-    return pAA, pSP1, pSP2, pSP3, pAB, rAA, eAA, wSP, eSP    
+    return pAA, pSP1, pSP2, pSP3, pXX, pMM, rAA, eAA, wSP, eSP    
 
 def displacement_categorize(ufit, ax0=None, ax1=None, ax2=None):
     ufit = ufit[1:-1, 1:-1, :]# truncate a little 
