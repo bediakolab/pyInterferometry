@@ -76,7 +76,9 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
     g1 = np.array([ 0, 2/np.sqrt(3)])
     g2 = np.array([-1, 1/np.sqrt(3)])
     gvecs1 = [ g1, g2, g1-g2 ]
-    cvecs =  [[0.70, 0.70*0.293014986, 0.70*0.293014986], [0, 0.70*0.6198545861, 0], [0.70*0.4,0.70*0.4,0.70]] 
+    f = 1.0 #0.7
+    linear_scale, cos2_scale = True, False
+    cvecs =  [[f, f*0.293014986, f*0.293014986], [0, f*0.6198545861, 0], [f*0.4,f*0.4,f]] 
     def luminance(v): 
         r,g,b = v[:]
         return (0.2126*r + 0.7152*g + 0.0722*b)
@@ -86,7 +88,10 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
     for i in range(nx):
         for j in range(ny):
             for n in range(len(gvecs1)):
-                coef = 1 - (np.cos(np.pi * np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])))**2 #(between 0 and 1)
+                coef_cos2scale   = 1 - (np.cos(np.pi * np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])))**2 #(between 0 and 1)
+                coef_linearscale = np.abs(np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])) #(between 0 and 1)
+                if linear_scale: coef = coef_linearscale
+                elif cos2_scale: coef = coef_cos2scale
                 colors1[i,j,:] += coef * np.array(cvecs[n])
             r, g, b = colors1[i,j,:]
             assert((np.nanmax([r,g,b]) <= 1.0) and not np.isnan(Ux[i,j]))
