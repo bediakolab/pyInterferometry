@@ -17,7 +17,7 @@ from heterostrain import extract_twist_hetstrain, plot_twist_hetstrain, plotTris
 from unwrap_utils import getAdjacencyMatrixManual, rotate_uvecs
 from visualization import disp_categorize_plot, displacement_colorplot, plot_adjacency, colored_quiver
 from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
-from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ
+from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_rzcartesian
 from strain import strain, unscreened_piezocharge, strain_induced_polarization, strain_method_3
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
 from new_utils import normNeighborDistance, crop_displacement
@@ -277,6 +277,16 @@ class DataSetContainer:
         self.subcropdilpath   = os.path.join(self.plotpath, "dilation_cropped_sub.png")
         self.subcropgammapath = os.path.join(self.plotpath, "shear_cropped_sub.png")
 
+        self.dillinecutpath   = os.path.join(self.plotpath, "dil_linecut.png")
+        self.rotlinecutpath   = os.path.join(self.plotpath, "rot_linecut.png")
+        self.countlinecutpath = os.path.join(self.plotpath, "count_linecut.png")
+        self.gamlinecutpath   = os.path.join(self.plotpath, "gamma_linecut.png")
+
+        self.dillinecuttxtpath   = os.path.join(self.plotpath, "dil_linecut.txt")
+        self.rotlinecuttxtpath   = os.path.join(self.plotpath, "rot_linecut.txt")
+        self.countlinecuttxtpath = os.path.join(self.plotpath, "count_linecut.txt")
+        self.gamlinecuttxtpath   = os.path.join(self.plotpath, "gamma_linecut.txt")
+
         self.rotsanitypath    = os.path.join(self.plotpath, "sanity_gvector_rotation_check.png")
         self.localsubplot     = os.path.join(self.plotpath, "sanity_local_substraction.png")
         self.sanity_intfit    = os.path.join(self.plotpath, "sanity_vdf_check2.png")
@@ -306,8 +316,9 @@ class DataSetContainer:
         self.update_data_flags()
 
     def set_sample_rotation(self):
-        #if self.check_parameter_is_set("SampleRotation"): 
-        #    return
+        if self.check_parameter_is_set("SampleRotation"): 
+            print("not resetting sample rotation since theres a value in info.txt...")
+            return
         if not self.check_has_diskset(): 
             print("data has no diskset or specified sample rotation")
             return
@@ -316,8 +327,9 @@ class DataSetContainer:
             mean_ang, stderr_ang = diskset.get_rotatation(True, self.rotsanitypath)
             rotation_correction = -11.3
             mean_ang = mean_ang + rotation_correction
-            print('Adding rotatational correctio of {} degrees to the measured sample rotation'.format(rotation_correction))
+            print('Adding rotatational correction of {} degrees to the measured sample rotation'.format(rotation_correction))
             self.update_parameter("SampleRotation", mean_ang )
+            print('total SampleRotation (convenience + instrument) is : ', mean_ang)
             self.update_parameter("K3toHAADFRotation_Used", rotation_correction )
             self.update_parameter("SampleRotationStdErr", stderr_ang )
 
@@ -1037,6 +1049,87 @@ class DataSetContainer:
         plt.savefig(savepath, dpi=300)
         plt.close('all')       
 
+    def linecut_avghex(self, u, mask, values, savepath, textsavepath, title):
+        uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False) #
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if values is not None: 
+                    if mask[i,j]: 
+                        values[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan   
+        start, spacing = 0.6, 15
+        print('using a bin width of a0/{} for the linecuts!'.format(spacing))
+        xrang = np.arange(-start,start+(1/spacing),1/spacing)
+        N = len(xrang) 
+        avg_vals, counter = np.zeros((N,N)), np.zeros((N,N))
+        umag = np.zeros((N,N))
+        std_vals = np.zeros((N,N))
+        eps = 1e-7
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if not np.isnan(uvecs_cart[i,j,0]) and not np.isnan(uvecs_cart[i,j,1]):
+                    ux_index = int(np.round((uvecs_cart[i,j,0]+start)*spacing))
+                    uy_index = int(np.round((uvecs_cart[i,j,1]+start)*spacing))
+                    if values is not None: 
+                        avg_vals[ux_index, uy_index] += values[i,j]
+                        std_vals[ux_index, uy_index] += (values[i,j]*values[i,j])
+                    counter[ux_index, uy_index]  += 1
+                    umag[ux_index, uy_index] += uvecs_cart[i,j,1]
+        for i in range(N):
+            for j in range(N):    
+                if counter[i,j] > 0: 
+                    if values is not None: 
+                        x2 = std_vals[i,j]
+                        x = avg_vals[i, j] 
+                        n = counter[i,j]
+                        m = x/n
+                        std_vals[i,j] = np.sqrt(x2/n - m*m)/np.sqrt(n)
+                        avg_vals[i, j] = m
+                        umag[i, j] /= n
+                else: 
+                    avg_vals[i, j] = counter[i,j] = np.nan
+        
+        if values is None: 
+            avg_vals = counter
+
+        f, ax = plt.subplots(1,3)
+        ax[0].imshow(avg_vals)
+        n0 = 2
+        ax[0].plot([i for i in range(spacing)], [int(N/2) for i in range(spacing)], color="red", linewidth=2)
+        ax[0].plot([i for i in range(spacing)], [n0 for i in range(spacing)], color="red", linewidth=2)
+        yaxis = [ v for v in avg_vals[int(N/2),:] if not np.isnan(v) ] 
+        stdevs = [ v for v,u in zip(std_vals[int(N/2),:],avg_vals[int(N/2),:]) if not np.isnan(u) ] 
+        umagv = [ v for v,u in zip(umag[int(N/2),:],avg_vals[int(N/2),:]) if not np.isnan(u) ]
+        yaxis2 = [ v for v in avg_vals[n0,:] if not np.isnan(v) ]  
+        stdevs2 = [ v for v,u in zip(std_vals[n0,:],avg_vals[n0,:]) if not np.isnan(u) ] 
+        umagv2 = [ v+1/np.sqrt(3) for v,u in zip(umag[n0,:],avg_vals[n0,:]) if not np.isnan(u) ] 
+        yaxis_cat = yaxis#np.concatenate((yaxis, yaxis2), axis=None)
+        stdevs_cat = stdevs#np.concatenate((stdevs, stdevs2), axis=None)
+        umagv = umagv#np.concatenate((umagv, umagv2), axis=None)
+        ax[1].plot(umagv, yaxis, c='k')   
+        ax[1].fill_between(umagv, [mean-st for mean,st in zip(yaxis,stdevs)], [mean+st for mean,st in zip(yaxis,stdevs)],color='gray')    
+        ax[1].set_xticks([-1/np.sqrt(3),0,1/np.sqrt(3)])
+        ax[1].set_xticklabels(['MM','XMMX','XX'])
+        umagv2 = umagv2 - np.min(umagv2)
+        umagv2 = [u+1/np.sqrt(3) for u in umagv2]
+        ax[2].plot(umagv2, yaxis2, c='k')   
+        ax[2].fill_between(umagv2, [mean-st for mean,st in zip(yaxis2,stdevs2)], [mean+st for mean,st in zip(yaxis2,stdevs2)],color='gray') 
+
+        with open(textsavepath, "w") as fid:
+            fid.write("mean value \t\t\t standard error \t\t\t stacking param (-1/root3=MM, 0=XMMX, 1/root3=XX, 2/root3=XX \n") 
+            for i in range(len(umagv)): 
+                fid.write("{} \t\t\t {} \t\t\t {} \t\t\t \n".format(yaxis[i], stdevs[i], umagv[i]))
+            for i in range(1,len(umagv2)):
+                fid.write("{} \t\t\t {} \t\t\t {} \t\t\t \n".format(yaxis2[i], stdevs2[i], umagv2[i]))
+
+        ax[2].set_xticks([1/np.sqrt(3),2/np.sqrt(3)])
+        ax[2].set_xticklabels(['XX','MM'])
+        ax[0].set_title(title)  
+        #plt.show()
+        #exit()
+        plt.savefig(savepath, dpi=300)
+        plt.close('all')
+        return 
+
     def make_hex_plot(self, axis, counts_axis, u, mask, values, centered, colormap, title, partition_axis=None):
 
         #u = self.u_unwrap       
@@ -1229,11 +1322,11 @@ class DataSetContainer:
         self.make_strain_plot(theta, True, self.theta_colormap, '$\\theta_r(^o)$', self.croprotpath, tris, use_tris)
         self.make_strain_plot(dil, True, self.dilation_colormap, '$dil(\\%)$', self.cropdilpath, tris, use_tris)  
         self.make_strain_plot(gamma, True, self.gamma_colormap, '$\\gamma(\\%)$', self.cropgammapath, tris, use_tris)
-        f, axes = plt.subplots(2,2)
+        f, axes = plt.subplots(2,3)
         axes = axes.flatten()    
         percents, averages = self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
         self.update_strain_stats(averages, "ReconRot")  
-        percents, averages = self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$')
+        percents, averages = self.make_hex_plot(axes[2], None, u, mask, dil, True , self.dilation_colormap, '$<dil>$', partition_axis=axes[4])
         self.update_strain_stats(averages, "Dil")  
         percents, averages = self.make_hex_plot(axes[1], axes[0], u, mask, gamma, True , self.gamma_colormap, '$<\\gamma>$')
         self.update_strain_stats(averages, "Gamma")  
@@ -1242,13 +1335,19 @@ class DataSetContainer:
         plt.savefig(self.hexplotpath, dpi=300)
         plt.close('all')
 
+    
         theta = theta - rig_theta[:theta.shape[0], :theta.shape[1]]
         dil = dil - rig_dil[:dil.shape[0], :dil.shape[1]]
         gamma = gamma - rig_gamma[:gamma.shape[0], :gamma.shape[1]]
         # plot after subtraction
         self.make_strain_plot(theta, True, self.theta_colormap, '$\\theta_r(^o)$', self.subcroprotpath, tris, use_tris)
-        self.make_strain_plot(dil, True, self.dilation_colormap, '$dil(\\%)$', self.subcropdilpath, tris, use_tris)
+        self.make_strain_plot(dil, True, self.dilation_colormap, '$dil(\\%)$',     self.subcropdilpath, tris, use_tris)
         self.make_strain_plot(gamma, True,  self.gamma_colormap, '$\\gamma(\\%)$', self.subcropgammapath, tris, use_tris)
+
+        ########################################
+        # area for the line cut implementation #
+        ########################################
+        # self.dillinecutpath, self.rotlinecutpath, self.countlinecutpath, self.gamlinecutpath
         f, axes = plt.subplots(2,2)
         axes = axes.flatten()    
         percents, averages = self.make_hex_plot(axes[3], None, u, mask, theta, True, self.theta_colormap, '$<\\theta_r(^o)>%$')
@@ -1261,6 +1360,13 @@ class DataSetContainer:
         print("saving hex plots to {}".format(self.subhexplotpath))
         plt.savefig(self.subhexplotpath, dpi=300)
         plt.close('all')
+
+        print('saving line cut plots and textfiles with data to {} and {}'.format(self.dillinecutpath, self.dillinecuttxtpath))
+        self.linecut_avghex(u, mask, dil, self.dillinecutpath, self.dillinecuttxtpath, '$<dil>$')  
+        self.linecut_avghex(u, mask, theta, self.rotlinecutpath, self.rotlinecuttxtpath, '$<\\theta_r(^o)>%$')
+        self.linecut_avghex(u, mask, gamma, self.gamlinecutpath, self.gamlinecuttxtpath, '$<\\gamma>$')
+        #self.linecut_avghex(u, mask, None, self.countlinecutpath, self.countlinecuttxtpath, '$counts$')
+           
 
     def update_strain_stats(self, averages, straintype):
         aAA,aSP1,aSP2,aSP3,aMM,aXX = averages[:]
