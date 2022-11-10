@@ -8,6 +8,19 @@ from utils import boolquery
 from new_utils import import_diskset, import_uvector, import_disket_uvector, get_diskset_index_options
 from interferometry_fitting import fit_full_hexagon, refit_full_hexagon_from_bin
 
+def interferometry_main_vdf_from_mask(vdf_list, gvecs, prefix, dsnum, binw=1, asym=None):
+    if asym is None: asym = boolquery('asymmetric fit w/sincos term? (helpful for AP data, wont affect results for P data)')
+    os.makedirs(os.path.join('..','plots', prefix, 'ds_{}'.format(dsnum)), exist_ok=True)
+    if asym:
+        coefs, ufit = fit_full_hexagon(vdf_list, prefix, 3, dsnum, binw=2, g=gvecs)
+        savepath = os.path.join('..','results', prefix, 'dat_ds{}.pkl_fit_bin2_asym'.format(dsnum))
+        with open(savepath, 'wb') as f: pickle.dump([vdf_list, coefs[:,0], coefs[:,1], coefs[:,2], ufit], f)
+    else:
+        coefs, ufit = fit_full_hexagon(vdf_list, prefix, 2, dsnum, binw=2, g=gvecs)
+        savepath = os.path.join('..','results', prefix, 'dat_ds{}.pkl_bin2_fit'.format(dsnum))
+        with open(savepath, 'wb') as f: pickle.dump([vdf_list, coefs[:,0], coefs[:,1], ufit], f)
+    return ufit
+
 def main(ds):
 
     # fit binned by 2

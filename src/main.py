@@ -60,6 +60,8 @@ def main():
     for ds in dsets:
     
         print(counter, " ", ds.name) 
+        ds.set_sample_rotation()
+        #exit()
 
         ########################################################
         #### disk intensity extraction
