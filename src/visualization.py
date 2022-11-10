@@ -67,23 +67,73 @@ def plot_adjacency(img, centers, adjacency_type, ax=None, colored=True):
                 if colored: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="y")
                 else: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="grey", linewidth=0.5)
 
+
+def new_rgb_to_hsv(r, g, b):
+ 
+    # R, G, B values are divided by 255
+    # to change the range from 0..255 to 0..1:
+    r, g, b = r / 255.0, g / 255.0, b / 255.0
+ 
+    # h, s, v = hue, saturation, value
+    cmax = max(r, g, b)    # maximum of r, g, b
+    cmin = min(r, g, b)    # minimum of r, g, b
+    diff = cmax-cmin       # diff of cmax and cmin.
+ 
+    # if cmax and cmax are equal then h = 0
+    if cmax == cmin:
+        h = 0
+     
+    # if cmax equal r then compute h
+    elif cmax == r:
+        h = (60 * ((g - b) / diff) + 360) % 360
+ 
+    # if cmax equal g then compute h
+    elif cmax == g:
+        h = (60 * ((b - r) / diff) + 120) % 360
+ 
+    # if cmax equal b then compute h
+    elif cmax == b:
+        h = (60 * ((r - g) / diff) + 240) % 360
+ 
+    # if cmax equal zero
+    if cmax == 0:
+        s = 0
+    else:
+        s = (diff / cmax) * 100
+ 
+    # compute v
+    v = cmax * 100
+    return h, s, v
+
 ##################################################################
 # plots displacements (cartesian basis) with cosine colorplot
 ##################################################################
-def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
+def displacement_colorplot_exp(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True, debugplot=False):
+
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
+    uvecs = np.zeros((Ux.shape[0], Ux.shape[1], 2))
+    uvecs[:,:,0], uvecs[:,:,1] = Ux, Uy
+    from basis_utils import cartesian_to_rz_WZ
+    #uvecs = cartesian_to_rz_WZ(uvecs, sign_wrap=False)
+    #Ux, Uy = uvecs[:,:,0], uvecs[:,:,1]
+    
     nx, ny = Ux.shape
-    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g1 = np.array([ 0, 2/np.sqrt(3)]) 
     g2 = np.array([-1, 1/np.sqrt(3)])
     gvecs1 = [ g1, g2, g1-g2 ]
-    f = 1.0 #0.7
+    f = 3.0
     linear_scale, cos2_scale = True, False
-    #cvecs =  [[f, f*0.293014986, f*0.293014986], [0, f*0.6198545861, 0], [f*0.4,f*0.4,f]] 
-    cvecs =  [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    cvecs =  [[f, f*0.293014986, f*0.293014986], [0, f*0.6198545861, 0], [f*0.4,f*0.4,f]] 
+    #cvecs =  [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     def luminance(v): 
         r,g,b = v[:]
         return (0.2126*r + 0.7152*g + 0.0722*b)
     import colorsys
+
+    def hue(r,g,b):
+        M = np.argmax([r,g,b])
+        c = np.max([r,g,b]) - np.min([r,g,b])
+
     h1,s1,v1 = colorsys.rgb_to_hsv(*cvecs[0]);
     h2,s2,v2 = colorsys.rgb_to_hsv(*cvecs[1]);
     h3,s3,v3 = colorsys.rgb_to_hsv(*cvecs[2]);
@@ -93,26 +143,77 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
     if h12_diff > 0.5: h12_diff = 1 - h12_diff 
     if h32_diff > 0.5: h32_diff = 1 - h32_diff 
     if h13_diff > 0.5: h13_diff = 1 - h13_diff 
-    #print(h12_diff, h32_diff, h13_diff) 
-    #print(luminance(cvecs[0]), luminance(cvecs[1]), luminance(cvecs[2]))     
-    #print(s1, s2, s3) 
-    #print(v1, v2, v3) 
-    #exit()
-    assert(np.abs(h12_diff - h32_diff) < 1e-5)
-    assert(np.abs(h32_diff - h13_diff) < 1e-5)
-    assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[1])) < 1e-5)
-    assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[2])) < 1e-5)
+    #assert(np.abs(h12_diff - h32_diff) < 1e-5)
+    #assert(np.abs(h32_diff - h13_diff) < 1e-5)
+    #assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[1])) < 1e-5)
+    #assert(np.abs(luminance(cvecs[0]) - luminance(cvecs[2])) < 1e-5)
     colors1 = np.zeros((nx, ny, 3))
+    hmat = np.zeros((nx, ny))
+    smat = np.zeros((nx, ny))
+    vmat = np.zeros((nx, ny))
+    lmat = np.zeros((nx, ny))
+    lmat2 = np.zeros((nx, ny))
+    umag = np.zeros((nx, ny))
+    for i in range(nx):
+        for j in range(ny):
+            umag[i,j] = (Ux[i,j]**2 + Uy[i,j]**2)**0.5
+    umag[i,j] = umag[i,j] * np.sqrt(3)
+
+    from hsluv import rgb_to_hpluv, hpluv_to_rgb
+
     for i in range(nx):
         for j in range(ny):
             for n in range(len(gvecs1)):
-                coef_cos2scale   = 1 - (np.cos(np.pi * np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])))**2 #(between 0 and 1)
+                #coef_cos2scale   = 1 - (np.cos(np.pi * np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])))**2 #(between 0 and 1)
                 coef_linearscale = np.abs(np.dot(gvecs1[n], [Ux[i,j], Uy[i,j]])) #(between 0 and 1)
                 if linear_scale: coef = coef_linearscale
-                elif cos2_scale: coef = coef_cos2scale
+                #elif cos2_scale: coef = coef_cos2scale
                 colors1[i,j,:] += coef * np.array(cvecs[n])
-            r, g, b = colors1[i,j,:]
-            assert((np.nanmax([r,g,b]) <= 1.0) and not np.isnan(Ux[i,j]))
+
+            if np.isnan(Ux[i,j]) or np.isnan(Uy[i,j]):
+                continue
+
+            uang = np.arctan(Uy[i,j]/(1e-7 + Ux[i,j])) # cartesian!
+            uang = (uang + np.pi/2) * 1/np.pi # in the range of 0 to 1
+            r, g, b = hpluv_to_rgb([uang*360, 95, umag[i,j]*150])
+
+            def ang2sat(ang):
+                a = ang%120
+                if a > 60: a = 120-a 
+                return a*100/60
+            def ang2hue(ang):
+                if ang < 120 and ang >= 0:   return 270
+                if ang < 240 and ang >= 120: return 120
+                if ang < 360 and ang >= 240: return 240
+            #r, g, b = hpluv_to_rgb([ang2hue(uang*360), ang2sat(uang*360), 200*umag[i,j]])
+            h, s, v = colorsys.rgb_to_hsv(r,g,b)
+            h, s, l = rgb_to_hpluv([r,g,b]); #h, s, l = h/360, s/100, l/100;
+            colors1[i,j,:] = r, g, b 
+            hmat[i,j] = h
+            smat[i,j] = s
+            vmat[i,j] = v
+            lmat[i,j] = l # 100*luminance([r,g,b])
+            #lmat2[i,j] = l_m# # (0.2126*r + 0.7152*g + 0.0722*b)
+    if debugplot:
+        f, ax = plt.subplots(2,3)
+        axes = ax.flatten()
+        plot_hexagon(axes[0], nx, ny, colors1, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        plot_hexagon(axes[1], nx, ny, hmat, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        axes[1].set_title('hue')
+        axes[2].set_title('sat')
+        axes[3].set_title('val')
+        axes[4].set_title('lum1')
+        #axes[5].set_title('lum2')
+        plot_hexagon(axes[2], nx, ny, smat, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        plot_hexagon(axes[3], nx, ny, vmat, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        plot_hexagon(axes[4], nx, ny, lmat, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        #plot_hexagon(axes[5], nx, ny, lmat2, radius=1/(2*(2 * np.max(Ux) * g2[0])), orientation=0)
+        for ax in axes:
+            for s in ['top','bottom','left','right']: 
+                ax.spines[s].set_linewidth(2)
+        plt.show()
+        exit()
+
     if ax is not None:
         if plot_hexagon_bool:
             f = 2 * np.max(Ux) * g2[0]
@@ -125,7 +226,7 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
             ax.quiver(uxrot, uyrot)
     return colors1
 
-def displacement_colorplot_old(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True):
+def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True, debugplot=False):
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
     nx, ny = Ux.shape
     g1 = np.array([ 0, 2/np.sqrt(3)])
@@ -138,7 +239,7 @@ def displacement_colorplot_old(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_boo
         for j in range(ny):
             for n in range(len(gvecs1)):
                 u = [Ux[i,j], Uy[i,j]]
-                cf = 1 - (np.cos(np.pi * np.dot(gvecs1[n], u)))**2
+                cf = 1 - ((np.cos(np.pi * np.dot(gvecs1[n], u))))**2
                 colors1[i,j,:] += cf * np.array(cvecs[n])
     if ax is not None:
         if plot_hexagon_bool:
@@ -302,6 +403,7 @@ def disp_categorize_plot(ufit, ax): #want cartesian u
         for j in range(ny):
             umag[i,j] = (ufit[i,j,0]**2 + ufit[i,j,1]**2)**0.5
     boundary = 0.5 * np.nanmax(umag.flatten()) 
+    print('max is', np.nanmax(umag.flatten()), ' a0')
     aa_mask = get_aa_mask(ufit, boundary=boundary, smooth=None)
     aa_radii = []
     contours = measure.find_contours(aa_mask, 0.5)
@@ -608,14 +710,14 @@ def make_examplefig_categorized(ax=None, plotflag=True, boundary=0.5):
 ##################################################################
 # function to make a legend for the colorplot visualization
 ##################################################################
-def make_legend(ax=None, sym=True, boundary=None, delta=None, plotflag=True):
+def make_legend(ax=None, sym=True, boundary=None, delta=None, plotflag=True, debugplot=False):
     xrange = np.arange(-0.50, 0.52, 0.01)#np.arange(-2.5, 2.52, 0.02)
     nx = len(xrange)
     U, V = np.meshgrid(xrange, xrange)
     if ax is None: f, ax = plt.subplots()
     ax.set_xlim([-15, nx+15])
     ax.set_ylim([-15, nx+15])
-    if sym: displacement_colorplot(ax, U, V, plot_hexagon_bool=True)
+    if sym: displacement_colorplot(ax, U, V, plot_hexagon_bool=True, debugplot=debugplot)
     else: displacement_colorplot_asym(ax, U, V, plot_hexagon_bool=True)
     if (boundary is not None) and (delta is not None):
         ufit = np.zeros((nx, nx, 2))
@@ -654,7 +756,8 @@ def plot_hexagon(ax, nx, ny, data, orientation=0, radius=1/2):
         old_pt = points[i]
         points[i] = [old_pt[1], old_pt[0]]
     mask = make_contour_mask(nx, ny, points)
-    data[mask <= 0,:] = [1.0, 1.0, 1.0]
+    if len(data.shape) == 3:   data[mask <= 0,:] = [1.0, 1.0, 1.0]
+    elif len(data.shape) == 2: data[mask <= 0] = 0.0
     ax.imshow(data)
     ax.add_patch(hex)
     return data
@@ -709,7 +812,7 @@ if __name__ == "__main__":
         #make_legend_categorized(ax=ax[0], plotflag=False)
         #make_examplefig_categorized(ax[0])
         f, ax = plt.subplots()
-        make_legend(ax, plotflag=False)
+        make_legend(ax, plotflag=False, debugplot=True)
         plt.show()
         #plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
         exit()

@@ -172,6 +172,33 @@ def manual_define_triangles(img):
     print(traingles)
     return traingles
 
+# for manual defined cropping
+def manual_define_lengths(img):
+    plt.close('all')
+    fig, ax = plt.subplots()
+    vecs = []
+    @call_counter
+    def click_event(click):
+        x,y = click.xdata, click.ydata
+        counter = click_event.calls - 1
+        print('counter {}'.format(counter))
+        print('({},{})'.format(x, y))
+        ax.scatter(x,y,color='k')
+        if counter%2 == 0: 
+            vecs.append([[x,y]])
+        else: 
+            vecs[-1].append([x,y])
+        if counter%3 == 1:
+            ax.plot([vecs[-1][-1][0], vecs[-1][-2][0]], [vecs[-1][-1][1], vecs[-1][-2][1]], color='k')
+        fig.canvas.draw()
+    print("please click to define the moire lengths. click twice times for each")
+    ax.imshow(img, origin='lower')
+    cid = fig.canvas.mpl_connect('button_press_event', click_event)
+    plt.show()
+    print('finished with manual definition')
+    print(vecs)
+    return vecs
+
 def getAdjacencyMatrixManual(img, points=None, adjacency_matrix=None):
     if points is not None: points, adjacency_matrix = manual_remove_AA(img, points, adjacency_matrix)
     points, adjacency_matrix = manual_define_AA(img, points, adjacency_matrix)
