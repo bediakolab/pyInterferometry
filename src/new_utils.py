@@ -246,6 +246,15 @@ def dump_matrix(mat, savepath):
         for line in mat:
             np.savetxt(f, line, fmt='%.2f,')
 
+def crop_image(img):
+    nx, ny = u.shape[0:2]
+    cropbool = input("crop? (y/n) ").lower().strip()[0] == 'y'
+    if cropbool:
+        vertices = manual_define_region(img)
+        if len(vertices) > 0:
+            mask = make_contour_mask(nx, ny, vertices, transpose=True)
+    return mask
+
 def crop_displacement(img, u):
     nx, ny = u.shape[0:2]
     cropbool = input("crop displacement field? (y/n) ").lower().strip()[0] == 'y'
