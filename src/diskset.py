@@ -7,6 +7,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from utils import *
 from time import sleep
 import os
+import pickle
 
 # click instead of asking for entries
 def manual_select_disks(diskset, dp, use_log):
@@ -453,7 +454,30 @@ class DiskSet:
             l2 = ((v1[0] - v3[0])**2 + (v1[1] - v3[1])**2)**0.5
             l3 = ((v3[0] - v2[0])**2 + (v3[1] - v2[1])**2)**0.5
             return np.arccos((l1**2 + l3**2 - l2**2)/(2*l1*l3)) 
+
+        use_single_ring = True #( len(g) != 12 )
+
+        if use_single_ring:
+
+            print('WARNING: original sample rotation might be incorrect')
+            n_inner = len([i for i in range(len(g)) if ringnos[i] == 1])
+            n_outter = len([i for i in range(len(g)) if ringnos[i] == 2])
+            if n_inner == 6:
+                use_out = False
+                print('using only ring1 for sample rotation')
+            elif n_outter == 6: 
+                use_out = True
+                print('using only ring2 for sample rotation')
+            else:
+                print('AAAA')
+                exit()
+        
         for i in range(len(g)):
+            if use_single_ring:
+                if use_out and ringnos[i] == 1: 
+                    continue
+                elif (not use_out) and ringnos[i] == 2: 
+                    continue
             ptA = graw[i][:]
             ptB = [0,0]
             ptC = g[i][0] * g1 + g[i][1] * g2
@@ -464,13 +488,19 @@ class DiskSet:
         if sanity_plot:
             f, ax = plt.subplots()
             for i in range(len(g)):
+                if use_single_ring:
+                    if use_out and ringnos[i] == 1: continue
+                    elif (not use_out) and ringnos[i] == 2: continue
                 gvec = g[i][0] * g1 + g[i][1] * g2
                 scale = 1/((graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5)
                 ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
                 #ax.text(scale*gvec[0], scale*gvec[1], '{}{}'.format(g[i][0],g[i][1]))
                 ax.text(scale*graw[i][0], scale*graw[i][1], i)
                 grot = rotate2d(scale*graw[i,:], -mean_ang)
-                ax.scatter(grot[0], grot[1], c='c')
+                if ringnos[i] == 1:
+                    ax.scatter(0.75*grot[0], 0.75*grot[1], c='c')
+                else:
+                    ax.scatter(grot[0], grot[1], c='c')
                 #ax.text(grot[0], grot[1], i)
                 scale = 1/((gvec[0] ** 2 + gvec[1] ** 2) ** 0.5) * 0.75 #0.75 factor so offset enough to see
                 ax.scatter(scale*gvec[0], scale*gvec[1], c='r')
@@ -618,3 +648,4 @@ def select_disks(diskset, dp, disks_to_use=None):
         print('ERROR: you didnt select any disks!')
         exit()
     return ndisks_used, diskset
+
