@@ -20,6 +20,23 @@ from new_utils import import_uvector, import_diskset, import_unwrap_uvector, nor
 from utils import writefile
 
 
+def make_coloredvdf(ring1, ring2, dfs):
+    avgring1 = np.zeros((dfs.shape[1], dfs.shape[2]))
+    avgring2 = np.zeros((dfs.shape[1], dfs.shape[2]))
+    for i in ring1: avgring1 += dfs[i,:,:]
+    for i in ring2: avgring2 += dfs[i,:,:]
+    avgring1 = gaussian_filter(avgring1,1)
+    avgring1 = avgring1 - np.nanmin(avgring1.flatten())
+    avgring1 = avgring1/np.nanmax(avgring1.flatten())
+    avgring2 = gaussian_filter(avgring2,1)
+    avgring2 = avgring2 - np.nanmin(avgring2.flatten())
+    avgring2 = avgring2/np.nanmax(avgring2.flatten())
+    stack_assign[:,:,0] = avgring1[:,:] # r channel
+    stack_assign[:,:,2] = avgring2[:,:] # b channel
+    stack_assign[:,:,1] = 0.5 * avgring1[:,:] + 0.5 * avgring2[:,:]
+    return stack_assign
+
+
 def colored_quiver(ax, u_x, u_y, sample_angle=0):
     colors = displacement_colorplot(None, u_x, u_y)
     uxrot = np.cos(sample_angle) * u_x - np.sin(sample_angle) * u_y

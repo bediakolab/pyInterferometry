@@ -10,6 +10,23 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from masking import make_contour_mask
 from basis_utils import get_nearby_equivs, getclosestequiv
 
+def manual_define_pt(img):
+    plt.close('all')
+    fig, ax = plt.subplots()
+    vertices = []
+    def click_event(click):
+        x,y = click.xdata, click.ydata
+        vertices.append([x,y])
+        ax.scatter(x,y,color='k')
+        fig.canvas.draw()
+        fig.canvas.mpl_disconnect(cid)
+        plt.close('all')
+    print("please click point")
+    ax.imshow(vdf, cmap='gray')
+    cid = fig.canvas.mpl_connect('button_press_event', click_event)
+    plt.show()
+    x, y = vertices[0][0], vertices[0][1]
+    return int(round(x)),int(round(y))
 
 def fit_ellipse(x, y):
     """
