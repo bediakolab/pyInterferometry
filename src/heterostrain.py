@@ -291,6 +291,43 @@ def extract_heterostrain(ufit, filenm, params, manual=False):
     plt.savefig("../plots/{}_hetstrains_manualdef.png".format(filenm), dpi=600)
     plt.show()
 
+def extract_heterostrain_vdf(img, filenm):
+
+    matplotlib.use('Qt5Agg')
+    triangles = manual_define_triangles(img)
+    f, ((ax6, ax3), (ax4, ax5)) = plt.subplots(2,2)
+    is_hbl, a, pixelsize, poissonratio, delta, given_twist = ask_user()
+    centers = None 
+    manual = True
+    tri_centers, thetas, het_strains, area_fracts = computeAllTris(triangles, centers, pixelsize, poissonratio, a, delta, is_hbl, given_twist, manual)
+    theta_colors, het_strain_colors = getColors(thetas, het_strains)
+
+    if is_hbl and given_twist is None:
+        plotTriangleQuantity(triangles, tri_centers, thetas, theta_colors, ax4, '$<\\theta_m> = {:.2f}^o$'.format(np.nanmean(thetas)), centers, manual)
+        plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colors, ax5, '$<deform> = {:.2f}%$'.format(np.nanmean(het_strains)), centers, manual)
+        writefile('../results/{}_angles.txt'.format(filenm), 'twist angles for {} (manual)'.format(filenm), thetas)
+        writefile('../results/{}_hetstrains.txt'.format(filenm), 'deforms for {} (manual)'.format(filenm), het_strains)
+        writefile('../results/{}_areafracts.txt'.format(filenm), 'area fractions for {}'.format(filenm), area_fracts)
+    elif is_hbl and given_twist is not None:
+        plotTriangleQuantity(triangles, tri_centers, thetas, theta_colors, ax4, '$<\\delta> = {:.2f}^o$'.format(np.nanmean(thetas)), centers, manual)
+        plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colors, ax5, '$<deform> = {:.2f}%$'.format(np.nanmean(het_strains)), centers, manual)    
+        writefile('../results/{}_deltas.txt'.format(filenm), 'lattice mismatch for {} (manual)'.format(filenm), thetas)
+        writefile('../results/{}_hetstrains.txt'.format(filenm), 'deforms for {} (manual)'.format(filenm), het_strains)
+        writefile('../results/{}_areafracts.txt'.format(filenm), 'area fractions for {}'.format(filenm), area_fracts)
+    elif not is_hbl:
+        plotTriangleQuantity(triangles, tri_centers, thetas, theta_colors, ax4, '$<\\theta_m> = {:.2f}^o$'.format(np.nanmean(thetas)), centers, manual)
+        plotTriangleQuantity(triangles, tri_centers, het_strains, het_strain_colors, ax5, '$<\epsilon> = {:.2f}%$'.format(np.nanmean(het_strains)), centers, manual)
+        writefile('../results/{}_angles.txt'.format(filenm), 'twist angles for {} (manual)'.format(filenm), thetas)
+        writefile('../results/{}_hetstrains.txt'.format(filenm), 'heterostrains for {} (manual)'.format(filenm), het_strains)
+        writefile('../results/{}_areafracts.txt'.format(filenm), 'area fractions for {}'.format(filenm), area_fracts)
+
+    ax3.axis('off')
+    ax6.imshow(img, origin='lower', cmap='plasma')
+    ax6.axis('off')
+    ax6.set_title('vdf sum')
+    plt.savefig("../plots/{}_hetstrains_manualdef.png".format(filenm), dpi=600)
+    plt.show()
+
 def auto_triangles(ufit):    
     GLOBAL_BOUNDARYVAL, GLOBAL_DELTAVAL, GLOBAL_COMBINE_CRIT, GLOBAL_COMBINE_CRIT = params[:]
     boundary_val = GLOBAL_BOUNDARYVAL
@@ -443,3 +480,11 @@ if __name__ == "__main__":
         manbool = boolquery("would you like to define moire triangles manually?")
         extract_heterostrain(uvecs, filenm, params, manbool)
         phsbool = boolquery("would you extract hetero-strain from another saved dataset?")
+
+    phsbool = boolquery("would you extract hetero-strain from a saved disket (from vdf)?")
+    while phsbool:
+        ds, prefix, dsnum = import_diskset()
+        filenm = os.path.join(prefix,'ds_{}'.format(dsnum))
+        vdf = overlay_vdf(ds, dsnum, prefix, plotflag=False)
+        extract_heterostrain_vdf(vdf, filenm)
+        phsbool = boolquery("would you extract hetero-strain from another saved diskset?")

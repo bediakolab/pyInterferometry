@@ -121,7 +121,7 @@ def main():
         ########################################################
         #### unwrapping
         ########################################################
-        if False and (not ds.check_has_unwrapping()) and ds.check_has_displacement() and boolquery("unwrap?"): 
+        if (not ds.check_has_unwrapping()) and ds.check_has_displacement() and boolquery("unwrap?"): 
             # do the unwrapping
             ufit, centers, adjacency_type = unwrap_main(ds)
             ds.update_unwraping(ufit, centers, adjacency_type)
