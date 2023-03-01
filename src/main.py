@@ -145,5 +145,5 @@ if __name__ == '__main__':
     #theta, hs, rigid_dil, rigid_twist = ds.make_twist_plot()
     #ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil)
     main()
-    compile_spreadsheet()
+    #compile_spreadsheet()
    

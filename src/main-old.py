@@ -15,8 +15,8 @@ from virtual_df import virtualdf_main
 from io_utilities import DataSetContainer, load_existing_dataset
 
 def main():
-    #if boolquery("would you like to spit the data into chunks?"):
-    #    chunk_split(datapath, int(input("chunk dimension? (100 will split into <= 100x100 nm)").lower().strip()))
+    if boolquery("would you like to spit the data into chunks?"):
+        chunk_split(datapath, int(input("chunk dimension? (100 will split into <= 100x100 nm)").lower().strip()))
     ds = load_existing_dataset()
     gc.collect()
     datacube, diskset = virtualdf_main(ds)
