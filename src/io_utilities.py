@@ -17,7 +17,7 @@ from heterostrain import extract_twist_hetstrain, plot_twist_hetstrain, plotTris
 from unwrap_utils import getAdjacencyMatrixManual, rotate_uvecs
 from visualization import disp_categorize_plot, displacement_colorplot, plot_adjacency, colored_quiver
 from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
-from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_rzcartesian
+from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_rzcartesian, rotate_uvecs
 from strain import strain, unscreened_piezocharge, strain_induced_polarization, strain_method_3
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
 from new_utils import normNeighborDistance, crop_displacement, parse_filepath
@@ -108,26 +108,57 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
     if ds.u_wrapped is None: ds.extract_displacement_fit()
     u = ds.u_wrapped.copy()
 
-    if False:
-        from basis_utils import rotate_uvecs
-        #f, axes = plt.subplots(3,2)
-        #axes = axes.flatten()
-        #N = 50
-        #axes[0].quiver(ds.u_wrapped[:N,:N,0],ds.u_wrapped[:N,:N,1])
-        #displacement_colorplot(axes[1], ds.u_wrapped[:N,:N,:], sample_angle=0, quiverbool=True)
+    img = displacement_colorplot(None, u)
+    crop_displacement(img, u)
+    u = u[pad:-pad, pad:-pad, :]
+    nx, ny = u.shape[0], u.shape[1]
+    n = np.min([nx, ny])
+    if n % 2 != 0: 
+        u = u[:n-1, :n-1]
+        nx, ny = u.shape[0], u.shape[1]
+    else: u = u[:n, :n]
+    assert(u.shape[0] % 2 == 0)
+    if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
+    u = cartesian_to_rz_WZ(u, sign_wrap=False)
+
+    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
+    points = [ [c[1], c[0]] for c in centers ]
+    u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=False) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
+    if transp:
+        uorig = u.copy()
+        for i in range(uorig.shape[0]):
+            for j in range(uorig.shape[1]):
+                for d in range(uorig.shape[2]):
+                    u[i,j,d] = uorig[j,i,d]
+    #centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
+
+    if False: # sanity checking orrientation
+        f, axes = plt.subplots(5,2)
+        N = 50
+        axes[0,0].quiver(ds.u_wrapped[:N,:N,0],ds.u_wrapped[:N,:N,1])
+        displacement_colorplot(axes[0,1], ds.u_wrapped[:N,:N,:], sample_angle=0, quiverbool=True)
         u_wrapped_t = np.zeros((ds.u_wrapped.shape[0], ds.u_wrapped.shape[1], ds.u_wrapped.shape[2]))
         for i in range(ds.u_wrapped.shape[0]):
             for j in range(ds.u_wrapped.shape[1]):
                 for d in range(ds.u_wrapped.shape[2]):
                     u_wrapped_t[i,j,d] = ds.u_wrapped[j,i,d]
-        #axes[2].quiver(u_wrapped_t[:N,:N,0],u_wrapped_t[:N,:N,1])
-        #displacement_colorplot(axes[3], u_wrapped_t[:N,:N,:], sample_angle=0, quiverbool=True)
-        u_wrapped_t = rotate_uvecs(u_wrapped_t, ang=(-np.pi/3))
-        #axes[4].quiver(u_wrapped_t[:N,:N,0],u_wrapped_t[:N,:N,1])
-        #displacement_colorplot(axes[5], u_wrapped_t[:N,:N,:], sample_angle=0, quiverbool=True)
-        #plt.show()
-        if transp: u = u_wrapped_t
-        else: u = ds.u_wrapped.copy()
+        axes[1,0].quiver(u_wrapped_t[:N,:N,0],u_wrapped_t[:N,:N,1])
+        displacement_colorplot(axes[1,1], u_wrapped_t[:N,:N,:], sample_angle=0, quiverbool=True)
+        u_wrapped_t_rot = rotate_uvecs(u_wrapped_t, ang=(-np.pi/3))
+        axes[2,0].quiver(u_wrapped_t_rot[:N,:N,0],u_wrapped_t_rot[:N,:N,1])
+        displacement_colorplot(axes[2,1], u_wrapped_t_rot[:N,:N,:], sample_angle=0, quiverbool=True)
+        u_wrapped_t_rot = rotate_uvecs(u_wrapped_t, ang=(np.pi/3))
+        axes[3,0].quiver(u_wrapped_t_rot[:N,:N,0],u_wrapped_t_rot[:N,:N,1])
+        displacement_colorplot(axes[3,1], u_wrapped_t_rot[:N,:N,:], sample_angle=0, quiverbool=True)
+        axes[4,0].quiver(u[:N,:N,0],u[:N,:N,1])
+        displacement_colorplot(axes[4,1], u[:N,:N,:], sample_angle=0, quiverbool=True)
+        axes[0,0].title.set_text('untranspose')
+        axes[1,0].title.set_text('transpose, r=0')
+        axes[2,0].title.set_text('transpose, r=-pi/3')
+        axes[3,0].title.set_text('transpose, r=pi/3')
+        axes[4,0].title.set_text('orrientation used')
+        plt.show()
+        exit()
 
     while True:
         methodid = input("Method? \n1: voronoi (good for large twist data, P or AP) \n2: watershed (good for most AP data unless very large twist)\n").lower().strip()[0] 
@@ -143,30 +174,6 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
         else:
             print('unrecognized/unimplemented method please try again'.format(methodid))
 
-    img = displacement_colorplot(None, u)
-    crop_displacement(img, u)
-    u = u[pad:-pad, pad:-pad, :]
-    nx, ny = u.shape[0], u.shape[1]
-    n = np.min([nx, ny])
-    if n % 2 != 0: 
-        u = u[:n-1, :n-1]
-        nx, ny = u.shape[0], u.shape[1]
-    else:
-        u = u[:n, :n]
-    assert(u.shape[0] % 2 == 0)
-
-    if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
-    u = cartesian_to_rz_WZ(u, sign_wrap=False)
-    print(u.shape)
-    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
-    points = [ [c[1], c[0]] for c in centers ]
-    #u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=False) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
-    
-    f, axes = plt.subplots(1,2)
-    axes[0].quiver(u[:50,:50,0],u[:50,:50,1])
-    displacement_colorplot(axes[1], u[:50,:50,:], sample_angle=0, quiverbool=True)
-    plt.show()
-
     #print('WARNING NOT UNWRAPPING BOMB OUT TO SAVE ADJ MAT ONLY')
     #ds.update_unwraping(u, centers, adjacency_type)
     #f, ax = plt.subplots()
@@ -178,6 +185,8 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
     else: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap_tri(centers, adjacency_type, u) 
     dists = normDistToNearestCenter(u.shape[0], u.shape[1], centers)
     variable_region = (dists > centerdist).astype(int)
+    print("centers used in unwrapping: ")
+    for point in points:  print("   ", point)
     u = strain_method_3(u_unwrapped, points, variable_region)
     return u, centers, adjacency_type   
 
