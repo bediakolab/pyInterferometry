@@ -35,27 +35,30 @@ def set_up_files(useh5=True):
     print('looking for folders of the format Name/1_100x100... formated like the example in the ../input to read data from')
     print("expect that these folders each contain a dm4 file with the 4dstem. Please put your data in this folder. NOTE, module")
     print("used to read doesnt support symbolic links(?) so please just copy directly. Please call the dm4 file Diffraction_SI.dm4. ")
-    if boolquery("Would you like to spit the data into N by N chunks?"):
-        chunk_split(datapath, int(input("chunk dimension? (100 will split into <= 100x100 nm)").lower().strip()))
-    gc.collect()
-    #probe_path = import_probe()
-    #probe_kernel, probe_kernel_FT, beamcenter = get_probe(probe_path) # read in probe
+    
+    chunk_split_bool = boolquery("Would you like to spit the data into N by N chunks?")
+    if chunk_split_bool:
+        Nchunk = int(input("chunk dimension? (100 will split into <= 100x100 nm)").lower().strip())
+        
     foundsomething = False
     for name in [el for el in os.listdir(datapath) if os.path.isdir(os.path.join(datapath, el))]:
         newdatapath = os.path.join(datapath, name)
+        if chunk_split_bool: chunk_split(newdatapath, Nchunk)
         for scandir in [el for el in os.listdir(newdatapath) if os.path.isdir(os.path.join(newdatapath, el))]:
             if scandir == 'before_chunksplit': continue
             foundsomething = True
             m_dir = os.path.join(newdatapath, scandir)
             datasetnum, scan_shape = parse_filename(scandir)
             savepath = os.path.join(os.path.join("..", "data"), os.path.join(name, "ds{}".format(datasetnum)))
+            if not os.path.exists(savepath): os.makedirs(savepath)          
             if useh5 and not os.path.exists(os.path.join(savepath, 'dp.h5')): 
-                print('converting a dm4 to a h5 file')
-                convert_dm4(scan_shape, m_dir)
+                if not os.path.exists(os.path.join(m_dir, 'dp.h5')): 
+                    print('converting a dm4 to a h5 file')
+                    convert_dm4(scan_shape, m_dir)
+                shutil.copyfile(os.path.join(m_dir, 'dp.h5'), os.path.join(savepath, "dp.h5"))
             elif (not useh5) and not os.path.exists(os.path.join(savepath, 'dp.dm4')):
                 shutil.copyfile(os.path.join(m_dir, 'Diffraction_SI.dm4'), os.path.join(savepath, "dp.dm4"))
             print("working on dataset {} of {} ".format(datasetnum, name))
-            if not os.path.exists(savepath): os.makedirs(savepath())                
             #avgdp_bool = boolquery("would you like to visualize the average dp in a real space region?")
             #while avgdp_bool:
             #    get_region_average_dp(datacube, diskset, plotbool=True)
@@ -73,7 +76,9 @@ def main():
     counter = 0
     gc.collect()
     for ds in dsets:
+
         print("working on: ", counter, " of ", ds.name) 
+        ds.autoset_parameters()
 
         ########################################################
         #### disk intensity extraction
@@ -145,8 +150,8 @@ def main():
             ds.make_adjacency_plot()
             rigid_dil, rigid_twist, rigid_gamma = ds.make_twist_plot()
             ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil, rigid_gamma)
-            #ds.make_piezo_plots()
-            ds.get_strain_stats()
+
+        ds.update_data_flags()
         counter += 1
 
 if __name__ == '__main__':

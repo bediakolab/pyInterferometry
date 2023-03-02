@@ -466,7 +466,7 @@ def chunk_split(datapath, chunksize):
         if np.max(scan_shape) > chunksize:
             nx = int(np.ceil(scan_shape[0]/chunksize))
             ny = int(np.ceil(scan_shape[1]/chunksize))
-            data = py4DSTEM.io.read( os.path.join(new_dir, 'Diffraction SI.dm4') )
+            data = py4DSTEM.io.read( os.path.join(new_dir, 'Diffraction_SI.dm4') )
             data.set_scan_shape(scan_shape[0],scan_shape[1])
             count = 0
             for i in range(nx):

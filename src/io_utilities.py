@@ -274,6 +274,7 @@ class DataSetContainer:
         self.unwrappath = os.path.join(self.folderpath, "unwrap.pkl")
         self.diskpath   = os.path.join(self.folderpath, "diskset.pkl")
         self.plotpath   = os.path.join(self.folderpath, "plots")
+        self.folderprefix = folderprefix
 
         # plots to save, edit here to change directory organization
         self.twistplotpath    = os.path.join(self.plotpath, "twist.png")
@@ -331,24 +332,26 @@ class DataSetContainer:
         self.parameter_dict_comments = dict() 
         self.write_directory()
 
-        with open(os.path.join(self.folderpath, "tmp.txt"), 'r') as f: orig_dir = f.readline()
-        _, dsnum, scan_shape, ss = parse_filepath(orig_dir, ss=True)
-        
-        self.update_parameter("ScanShapeX", scan_shape[0], "parsed from given directory")
-        self.update_parameter("ScanShapeY", scan_shape[1], "parsed from given directory")
-        self.update_parameter("PixelSize",  ss, "parsed from given directory")
-        self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")        
-        self.update_material_parameters(folderprefix)
+    def autoset_parameters(self):    
+        if os.path.exists(os.path.join(self.folderpath, "tmp.txt")):
+            with open(os.path.join(self.folderpath, "tmp.txt"), 'r') as f: 
+                orig_dir = f.readline()
+            _, dsnum, scan_shape, ss = parse_filepath(orig_dir, ss=True)
+            self.update_parameter("ScanShapeX", scan_shape[0], "parsed from given directory")
+            self.update_parameter("ScanShapeY", scan_shape[1], "parsed from given directory")
+            self.update_parameter("PixelSize",  ss, "parsed from given directory")
+            self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")    
+
+        self.update_material_parameters(self.folderprefix)
         #self.update_parameter("SmoothingSigma", 2.0, "asssumed, default")
         #self.update_parameter("PixelSize", 0.5, "asssumed, default")
         self.update_parameter("FittingFunction", "A+Bcos^2+Csincos", "asssumed, default")
         self.update_parameter("BackgroundSubtraction", "Lorenzian", "asssumed, default")
-        #self.set_sample_rotation()
 
         if not self.check_parameter_is_set("HeteroBilayer"):
             print('please set HeteroBilayer to yes, t, y, or true if it is a HeteroBilayer.')
             self.update_parameter("HeteroBilayer")
-        self.update_data_flags()
+        self.set_sample_rotation()
 
 
     def set_sample_rotation(self):
@@ -543,6 +546,7 @@ class DataSetContainer:
         tri_centers, thetas, het_strains, deltas, het_strain_proxies = extract_twist_hetstrain(self)
         
         if self.is_hbl:
+            print("DiffractionPatternTwist is the average twist angle we got by looking at the average diffraction pattern")
             twist_dp = self.extract_parameter("DiffractionPatternTwist", update_if_unset=True, param_type=float)
             print('Using Diffraction pattern twist of {} degress, {} radians'.format(twist_dp, twist_dp * np.pi/180))
             self.update_parameter("AvgMoireMismatch", np.nanmean(deltas), "make_twist_plot")
@@ -817,7 +821,7 @@ class DataSetContainer:
             plt.show()
             self.u_unwrap  = self.u_wrapped[:, :, :]
             self.u_wrapped = self.u_wrapped[:, :, :]
-            _, _, gamma, theta, dil = self.extract_strain(subtract=False, smoothbool=False)# plot reconstruction rotation
+            _, _, gamma, theta, dil = self.extract_strain(smoothbool=False)# plot reconstruction rotation
             cmap = self.theta_colormap 
             title = '$\\theta_r(^o)$'
             f, ax = plt.subplots()
@@ -879,99 +883,6 @@ class DataSetContainer:
             plt.savefig(self.dispplotpath, dpi=300)
             plt.close('all')
 
-    def make_piezo_plots(self, rewrite=True):
-
-        if self.is_hbl: 
-            print('skipping HBL piezocharge calculations')
-            return 
-
-        if os.path.exists(self.piezoplotpath) and not rewrite: 
-            print('{} exists so skipping'.format(self.piezoplotpath))
-            return
-
-        if self.u_unwrap is None: self.extract_unwraping()  
-        sigma = self.extract_parameter("SmoothingSigma",      update_if_unset=True, param_type=float)
-        ss    = self.extract_parameter("PixelSize",           force_set=True,       param_type=float)
-        a     = self.extract_parameter("LatticeConstant",     force_set=True,       param_type=float)
-        pc    = self.extract_parameter("PiezoChargeConstant", update_if_unset=True, param_type=float)
-        sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
-        smoothed_u = smooth(self.u_unwrap, sigma)
-        smooth_scale_u = smoothed_u * a/ss
-        piezo_top = unscreened_piezocharge(smooth_scale_u, sample_angle=sample_angle, ss=ss, coef=pc)
-        P_top = strain_induced_polarization(smooth_scale_u, sample_angle=sample_angle, ss=ss, coef=pc)
-
-        x, y, px, py = [], [], [], []
-        P_mag = np.zeros((P_top.shape[1], P_top.shape[2]))
-        for i in range(P_top.shape[1]):
-            for j in range(P_top.shape[2]):
-                x.append(j)
-                y.append(i)
-                px.append(P_top[0,i,j])
-                py.append(P_top[1,i,j])
-                P_mag[i,j] = ( P_top[0,i,j] ** 2 + P_top[1,i,j] ** 2 ) ** 0.5
-
-        f, ax = plt.subplots()
-        lim = np.nanmax(np.abs(piezo_top.flatten())) # want colormap symmetric about zero
-        im = ax.imshow(piezo_top, origin='lower', cmap=self.piezo_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title("$rho_{unscreened piezo}^{top}(e*nm^{-2})$")   
-        ax.set_xlabel("$x(pixels)$")  
-        ax.set_ylabel("$y(pixels)$") 
-        print("saving piezocharge plot to {}".format(self.piezoplotpath)) 
-        plt.savefig(self.piezoplotpath, dpi=300)      
-        
-        f, ax = plt.subplots()
-        lim = np.nanmax(np.abs(P_mag.flatten())) # want colormap symmetric about zero
-        im = ax.imshow(P_mag, origin='lower', cmap=self.piezo_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=ax, orientation='vertical')       
-        ax.quiver(x, y, px, py)
-        ax.set_title("$P_{unscreened piezo}^{top}(e*nm^{-1})$")    
-        ax.set_xlabel("$x(pixels)$")  
-        ax.set_ylabel("$y(pixels)$")
-        plt.savefig(self.piezoquiverpath, dpi=300)     
-
-        # get the averaged strains
-        u, scaled_u, _, _, _ = self.extract_strain()
-        tri_centers, thetas, het_strains, deltas, het_strain_proxies = extract_twist_hetstrain(self)
-        mask, use_tris, tris, _ = manual_define_good_triangles(piezo_top, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
-        uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False)
-
-        # apply mask
-        for i in range(mask.shape[0]):
-            for j in range(mask.shape[1]):
-                if mask[i,j]: piezo_top[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan
-        
-        start, spacing = 0.6, 25
-        xrang = np.arange(-start,start+(1/spacing),1/spacing)
-        N = len(xrang)
-        avg_piezo, counter = np.zeros((N,N)), np.zeros((N,N))
-        for i in range(mask.shape[0]):
-            for j in range(mask.shape[1]):
-                if not np.isnan(uvecs_cart[i,j,0]) and not np.isnan(uvecs_cart[i,j,1]):
-                    ux_index = int(np.round((uvecs_cart[i,j,0]+start)*spacing))
-                    uy_index = int(np.round((uvecs_cart[i,j,1]+start)*spacing))
-                    avg_piezo[ux_index, uy_index] += piezo_top[i,j]
-                    counter[ux_index, uy_index] += 1
-        for i in range(N):
-            for j in range(N):    
-                if counter[i,j] > 0: avg_piezo[i, j] /= counter[i,j]
-                else: avg_piezo[i, j] = np.nan
-
-        f, axes = plt.subplots(1,2)
-        axes = axes.flatten()
-        lim = np.nanmax(np.abs(avg_piezo.flatten())) # want colormap symmetric about zero
-        im = axes[0].imshow(avg_piezo, origin='lower', cmap=self.piezo_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=axes[0], orientation='vertical')
-        axes[0].set_title('$<\\rho_{piezo}^{top}>%$')  
-        im = axes[1].imshow(counter, origin='lower', cmap=self.counter_colormap)
-        plt.colorbar(im, ax=axes[1], orientation='vertical')
-        axes[1].set_title('counts')
-        for ax in axes: ax.axis('off')
-        for ax in axes: ax.set_aspect('equal')
-        print("saving piezo hex plot to {}".format(self.piezohexplotpath))
-        plt.savefig(self.piezohexplotpath, dpi=300)
-        plt.close('all')
-
     def make_bindisplacement_plot(self):
         #if os.path.exists(self.dispbin2plotpath): return
         if self.u_wrapped_bin is None: self.extract_bindisp_fit()
@@ -985,93 +896,17 @@ class DataSetContainer:
         plt.savefig(self.dispbin2plotpath, dpi=300)
         plt.close('all')
 
-    def extract_strain(self, smoothbool=True, subtract=True):
+    def extract_strain(self, smoothbool=True):
         if self.u_unwrap is None: self.extract_unwraping()          
         sigma = self.extract_parameter("SmoothingSigma", update_if_unset=True, param_type=float)
-        thetam = self.extract_parameter("AvgMoireTwist", force_set=True, param_type=float)
         ss = self.extract_parameter("PixelSize", force_set=True, param_type=float)
         a = self.extract_parameter("LatticeConstant", force_set=True, param_type=float)
         sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
-        if self.is_hbl: 
-            twist = self.extract_parameter("DiffractionPatternTwist", update_if_unset=False, param_type=float)
-            thetam, deltam = twist, np.abs(thetam)
-            print("Will subtract off given twist of {} deg and calculated average lattice mismatch of {} percent ".format(thetam, deltam))
-        else:
-            deltam = 0.0
         if smoothbool: smoothed_u = smooth(self.u_unwrap, sigma)
         else: smoothed_u = self.u_unwrap
         smooth_scale_u = smoothed_u * a/ss
         _, _, _, _, gamma, thetap, theta, dil = strain(smooth_scale_u, sample_angle)
-        if subtract:
-            print('Subtract of global delta_rigid, theta_rigid of {} and {}'.format(thetam, deltam))
-            return smoothed_u, smooth_scale_u, 100*gamma, theta-thetam, 100*dil-deltam
-        else:
-            return smoothed_u, smooth_scale_u, 100*gamma, theta, 100*dil
-
-    def make_strainplots_uncropped_dep(self):
-
-        showflag=True
-        self.extract_unwraping()  
-        #self.u_unwrap = self.u_unwrap[20:30, 20:30, :]
-        Ux = self.u_unwrap[:,:,0]
-        Uy = self.u_unwrap[:,:,1]
-        #print(Ux)
-        #print(Uy)
-        #if os.path.exists(self.rotplotpath): return
-        _, _, gamma, theta, dil = self.extract_strain(subtract=False, smoothbool=False)
-
-        # plot reconstruction rotation
-        cmap = self.theta_colormap
-        title = '$\\theta_r(^o)$'
-        f, ax = plt.subplots()
-        lim = np.max(np.abs(theta.flatten())) # want colormap symmetric about zero
-        im = ax.imshow(theta, origin='lower', cmap=cmap)#, vmin=-lim, vmax=lim) 
-        plot_adjacency(None, self.centers, self.adjacency_type, ax=ax, colored=False) # overlay triangles
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title(title)
-        ax.set_xlabel("$x(pixels)$")  
-        ax.set_ylabel("$y(pixels)$")
-        print("saving reconstruction rotation plot to {}".format(self.rotplotpath))  
-        if showflag:
-            plt.show()
-        else:
-            plt.savefig(self.rotplotpath, dpi=300)
-            plt.close('all')
-
-        # plot shear strain
-        cmap = self.gamma_colormap
-        title = '$\\gamma(\\%)$'
-        f, ax = plt.subplots()
-        im = ax.imshow(gamma, origin='lower', cmap=cmap) 
-        plot_adjacency(None, self.centers, self.adjacency_type, ax=ax, colored=False) # overlay triangles
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title(title)
-        ax.set_xlabel("$x(pixels)$")  
-        ax.set_ylabel("$y(pixels)$")
-        print("saving shear strain plot to {}".format(self.shearplotpath))  
-        if showflag:
-            plt.show()
-        else:
-            plt.savefig(self.shearplotpath, dpi=300)
-            plt.close('all')
-
-        # plot dilation strain
-        cmap = self.dilation_colormap 
-        title = '$dil(\\%)$'
-        f, ax = plt.subplots()
-        lim = np.max(np.abs(dil.flatten())) # want colormap symmetric about zero
-        im = ax.imshow(dil, origin='lower', cmap=cmap)#, vmin=-lim, vmax=lim) 
-        plot_adjacency(None, self.centers, self.adjacency_type, ax=ax, colored=False) # overlay triangles
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title(title)
-        ax.set_xlabel("$x(pixels)$")  
-        ax.set_ylabel("$y(pixels)$")
-        print("saving dilaton plot to {}".format(self.dilplotpath)) 
-        if showflag:
-            plt.show()
-        else:
-            plt.savefig(self.dilplotpath, dpi=300)
-            plt.close('all')  
+        return smoothed_u, smooth_scale_u, 100*gamma, theta, 100*dil
 
     def make_strain_plot(self, values, centered, colormap, title, savepath, tris, use_tris):
         # plot values with triangle area mask
@@ -1292,7 +1127,7 @@ class DataSetContainer:
         rig_dil = rigid_dilation * 100
         rig_gamma = rigid_gamma * 100
         rig_theta = rigid_local_twist * 180/np.pi
-        u, scaled_u, gamma, theta, dil = self.extract_strain(smoothbool=True, subtract=False)
+        u, scaled_u, gamma, theta, dil = self.extract_strain(smoothbool=True)
         if np.nanmean(theta.flatten()) < 0: theta *= -1 #convention positive dilation overall, diverging, will substract from rigid
         if np.nanmean(dil.flatten()) < 0: dil *= -1 #convention positive dilation overall, diverging, will substract from rigid
 
@@ -1438,211 +1273,6 @@ class DataSetContainer:
                 self.update_parameter("ErrMX{}".format(straintype), stder(aMM), "get_strain_stats")
                 self.update_parameter("AvgXM{}".format(straintype), np.nanmean(aXX), "get_strain_stats")
                 self.update_parameter("ErrXM{}".format(straintype), stder(aXX), "get_strain_stats")
-            
-    def get_strain_stats_dep(self):
-
-        scaleu, u, gamma, theta, dil = self.extract_strain()
-        delta=(np.pi/12)
-        umag = np.zeros((u.shape[0],u.shape[1]))
-        for i in range(u.shape[0]):
-            for j in range(u.shape[1]):
-                umag[i,j] = (u[i,j,0]**2 + u[i,j,1]**2)**0.5
-        boundary = 0.5 * np.max(u.flatten()) 
-        AAmask = get_aa_mask(u, boundary=boundary, smooth=None)
-        sp1mask, sp2mask, sp3mask, mask_mm, mask_xx = get_sp_masks(u, AAmask, delta=delta, exclude_aa=True, include_aa=False, window_filter_bool=False)
-        SPmask = ( (sp1mask.astype(int) + sp2mask.astype(int) + sp3mask.astype(int)) > 0 ).astype(int)
-        MMmask = mask_mm.astype(int) 
-        XXmask = mask_xx.astype(int) 
-
-        n_xx, n_mm = 0, 0
-        for i in range(XXmask.shape[0]):
-            for j in range(XXmask.shape[1]):
-                if MMmask[i,j]: n_mm += 1
-                if XXmask[i,j]: n_xx += 1
-        if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap' and (n_xx > n_mm):
-            print('WARNING: flipping XX and MM since think that the hexagon was rotated')
-            MMmask, XXmask = XXmask, MMmask
-
-        AARot, SPRot, XXRot, MMRot = [], [], [], []
-        for i in range(u.shape[0]):
-            for j in range(u.shape[1]):
-                if AAmask[i,j]: AARot.append(theta[i,j])
-                elif SPmask[i,j]: SPRot.append(theta[i,j])
-                elif MMmask[i,j]: MMRot.append(theta[i,j])
-                elif XXmask[i,j]: XXRot.append(theta[i,j])
-        AADil, SPDil, XXDil, MMDil = [], [], [], []
-        for i in range(u.shape[0]):
-            for j in range(u.shape[1]):
-                if AAmask[i,j]: AADil.append(dil[i,j])
-                elif SPmask[i,j]: SPDil.append(dil[i,j])
-                elif MMmask[i,j]: MMDil.append(dil[i,j])
-                elif XXmask[i,j]: XXDil.append(dil[i,j])
-        AAGamma, SPGamma, XXGamma, MMGamma  = [], [], [], []
-        for i in range(u.shape[0]):
-            for j in range(u.shape[1]):
-                if AAmask[i,j]: AAGamma.append(gamma[i,j])
-                elif SPmask[i,j]: SPGamma.append(gamma[i,j])
-                elif MMmask[i,j]: MMGamma.append(gamma[i,j])
-                elif XXmask[i,j]: XXGamma.append(gamma[i,j])
-  
-        if self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'ap':
-
-            self.update_parameter("AvgXMMXReconRot", np.nanmean(AARot), "get_strain_stats")
-            self.update_parameter("ErrXMMXReconRot", stder(AARot), "get_strain_stats")
-            self.update_parameter("AvgMMReconRot", np.nanmean(MMRot), "get_strain_stats")
-            self.update_parameter("ErrMMReconRot", stder(MMRot), "get_strain_stats")
-            self.update_parameter("AvgXXReconRot", np.nanmean(XXRot), "get_strain_stats")
-            self.update_parameter("ErrXXReconRot", stder(XXRot), "get_strain_stats")
-            self.update_parameter("AvgSPReconRot", np.nanmean(SPRot), "get_strain_stats")
-            self.update_parameter("ErrSPReconRot", stder(SPRot), "get_strain_stats")
-            self.update_parameter("AvgSPDil", np.nanmean(SPDil), "get_strain_stats")
-            self.update_parameter("ErrSPDil", stder(SPDil), "get_strain_stats")
-            self.update_parameter("AvgXMMXDil", np.nanmean(AADil), "get_strain_stats")
-            self.update_parameter("ErrXMMXDil", stder(AADil), "get_strain_stats")
-            self.update_parameter("AvgMMDil", np.nanmean(MMDil), "get_strain_stats")
-            self.update_parameter("ErrMMDil", stder(MMDil), "get_strain_stats")
-            self.update_parameter("AvgXXDil", np.nanmean(XXDil), "get_strain_stats")
-            self.update_parameter("ErrXXDil", stder(XXDil), "get_strain_stats")
-            self.update_parameter("AvgSPGamma", np.nanmean(SPGamma), "get_strain_stats")
-            self.update_parameter("ErrSPGamma", stder(SPGamma), "get_strain_stats")
-            self.update_parameter("AvgXMMXGamma", np.nanmean(AAGamma), "get_strain_stats")
-            self.update_parameter("ErrXMMXGamma", stder(AAGamma), "get_strain_stats")
-            self.update_parameter("AvgMMGamma", np.nanmean(MMGamma), "get_strain_stats")
-            self.update_parameter("ErrMMGamma", stder(MMGamma), "get_strain_stats")
-            self.update_parameter("AvgXXGamma", np.nanmean(XXGamma), "get_strain_stats")
-            self.update_parameter("ErrXXGamma", stder(XXGamma), "get_strain_stats")
-
-        elif self.extract_parameter("Orientation", update_if_unset=True, param_type=str).strip().lower() == 'p':
-
-            self.update_parameter("AvgMMXXReconRot", np.nanmean(AARot), "get_strain_stats")
-            self.update_parameter("ErrMMXXReconRot", stder(AARot), "get_strain_stats")
-            self.update_parameter("AvgMXorXMReconRot", np.nanmean(MMRot+XXRot), "get_strain_stats")
-            self.update_parameter("ErrMXorXMReconRot", stder(MMRot+XXRot), "get_strain_stats")
-            self.update_parameter("AvgSPReconRot", np.nanmean(SPRot), "get_strain_stats")
-            self.update_parameter("ErrSPReconRot", stder(SPRot), "get_strain_stats")
-            self.update_parameter("AvgSPDil", np.nanmean(SPDil), "get_strain_stats")
-            self.update_parameter("ErrSPDil", stder(SPDil), "get_strain_stats")
-            self.update_parameter("AvgMMXXDil", np.nanmean(AADil), "get_strain_stats")
-            self.update_parameter("ErrMMXXDil", stder(AADil), "get_strain_stats")
-            self.update_parameter("AvgMXorXMDil", np.nanmean(MMDil+XXDil), "get_strain_stats")
-            self.update_parameter("ErrMXorXMDil", stder(MMDil+XXDil), "get_strain_stats")
-            self.update_parameter("AvgSPGamma", np.nanmean(SPGamma), "get_strain_stats")
-            self.update_parameter("ErrSPGamma", stder(SPGamma), "get_strain_stats")
-            self.update_parameter("AvgMMXXGamma", np.nanmean(AAGamma), "get_strain_stats")
-            self.update_parameter("ErrMMXXGamma", stder(AAGamma), "get_strain_stats")
-            self.update_parameter("AvgMXorXMGamma", np.nanmean(MMGamma+XXGamma), "get_strain_stats")
-            self.update_parameter("ErrMXorXMGamma", stder(MMGamma+XXGamma), "get_strain_stats")
-     
-    def make_cropped_plots_dep(self):
-        
-        #if os.path.exists(self.cropdisppath): return
-        # crop based on triangles
-        u, scaled_u, gamma, theta, dil = self.extract_strain()
-        mask, use_tris, tris, tri_centers = manual_define_good_triangles(theta, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
-        img = displacement_colorplot(None, u)
-        for i in range(mask.shape[0]):
-            for j in range(mask.shape[1]):
-                if mask[i,j]: 
-                    gamma[i,j] = theta[i,j] = dil[i,j] = np.nan
-                    img[i,j] = [1.0, 1.0, 1.0]
-
-        # plot displacement with triangle area mask
-        f, ax = plt.subplots()
-        ax.imshow(img, origin='lower')
-        ax.set_title('$u$') 
-        plotTris(tris, ax, self.centers, manual=False, use_tris=use_tris)
-        plt.savefig(self.cropdisppath, dpi=300)
-        plt.close('all')
-
-        # plot theta with triangle area mask
-        f, ax = plt.subplots()
-        lim = np.nanmax(np.abs(theta.flatten()))
-        im = ax.imshow(theta, origin='lower', cmap=self.theta_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title('$\\theta_r(^o)$')
-        plotTris(tris, ax, self.centers, manual=False, use_tris=use_tris)
-        plt.savefig(self.croprotpath, dpi=300)
-        plt.close('all')
-
-        # plot dil with triangle area mask
-        f, ax = plt.subplots()
-        lim = np.nanmax(np.abs(dil.flatten()))
-        im = ax.imshow(dil, origin='lower', cmap=self.dilation_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        plotTris(tris, ax, self.centers, manual=False, use_tris=use_tris)
-        ax.set_title('$dil(\\%)$')
-        plt.savefig(self.cropdilpath, dpi=300)
-        plt.close('all')
-        
-        # plot gamma with triangle area mask
-        f, ax = plt.subplots()
-        im = ax.imshow(gamma, origin='lower', cmap=self.gamma_colormap)
-        plt.colorbar(im, ax=ax, orientation='vertical')
-        ax.set_title('$\\gamma(\\%)$')  
-        plotTris(tris, ax, self.centers, manual=False, use_tris=use_tris)
-        plt.savefig(self.cropgammapath, dpi=300)
-        plt.close('all')
-
-    def make_averaged_hexplots_dep(self):
-
-        #if os.path.exists(self.hexplotpath): return
-        # get the averaged strains
-        u, scaled_u, gamma, theta, dil = self.extract_strain()
-
-        tri_centers, thetas, het_strains, deltas, het_strain_proxies = extract_twist_hetstrain(self)
-        mask, use_tris, tris, _ = manual_define_good_triangles(theta, [[c[1], c[0]] for c in self.centers], self.adjacency_type)
-        
-        uvecs_cart = cartesian_to_rz_WZ(u.copy(), sign_wrap=False)
-        for i in range(mask.shape[0]):
-            for j in range(mask.shape[1]):
-                if mask[i,j]: gamma[i,j] = theta[i,j] = dil[i,j] = uvecs_cart[i,j,0] = uvecs_cart[i,j,1] = np.nan
-        
-        start, spacing = 0.6, 25
-        xrang = np.arange(-start,start+(1/spacing),1/spacing)
-        N = len(xrang)
-        avg_gamma, avg_theta, avg_dil, counter = np.zeros((N,N)), np.zeros((N,N)), np.zeros((N,N)), np.zeros((N,N))
-        for i in range(mask.shape[0]):
-            for j in range(mask.shape[1]):
-                if not np.isnan(uvecs_cart[i,j,0]) and not np.isnan(uvecs_cart[i,j,1]):
-                    ux_index = int(np.round((uvecs_cart[i,j,0]+start)*spacing))
-                    uy_index = int(np.round((uvecs_cart[i,j,1]+start)*spacing))
-                    avg_gamma[ux_index, uy_index] += gamma[i,j]
-                    avg_theta[ux_index, uy_index] += theta[i,j]
-                    avg_dil[ux_index, uy_index] += dil[i,j]
-                    counter[ux_index, uy_index] += 1
-        for i in range(N):
-            for j in range(N):    
-                if counter[i,j] > 0:
-                    avg_gamma[i, j] /= counter[i,j]
-                    avg_theta[i, j] /= counter[i,j]
-                    avg_dil[i, j] /= counter[i,j]
-                else:
-                    avg_gamma[i, j] = avg_theta[i, j] = avg_dil[i, j] = counter[i,j] = np.nan
-
-        f, axes = plt.subplots(2,2)
-        axes = axes.flatten()
-        lim = np.nanmax(np.abs(avg_theta.flatten())) # want colormap symmetric about zero
-        im = axes[0].imshow(avg_theta, origin='lower', cmap=self.theta_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=axes[0], orientation='vertical')
-        axes[0].set_title('$<\\theta_r(^o)>%$')  
-
-        im = axes[1].imshow(avg_gamma, origin='lower', cmap=self.gamma_colormap)#, vmax=5.0, vmin=0.0)
-        plt.colorbar(im, ax=axes[1], orientation='vertical')
-        axes[1].set_title('$<\\gamma>$')  
-        lim = np.nanmax(np.abs(avg_dil.flatten()))
-        im = axes[2].imshow(avg_dil, origin='lower', cmap=self.dilation_colormap, vmax=lim, vmin=-lim)
-        plt.colorbar(im, ax=axes[2], orientation='vertical')
-        axes[2].set_title('$<dil>$')
-
-        im = axes[3].imshow(counter, origin='lower', cmap=self.counter_colormap) 
-        plt.colorbar(im, ax=axes[3], orientation='vertical')
-        axes[3].set_title('counts')
-         
-        for ax in axes: ax.axis('off')
-        for ax in axes: ax.set_aspect('equal')
-        print("saving hex plots to {}".format(self.hexplotpath))
-        plt.savefig(self.hexplotpath, dpi=300)
-        plt.close('all')
 
     def update_diskset(self, diskset):
         if os.path.exists(self.diskpath):
