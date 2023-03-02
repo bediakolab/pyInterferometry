@@ -288,7 +288,7 @@ def computeAdjacencyMatrix(centers, lines_sp1, lines_sp2, lines_sp3, spdist):
 
 def getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers=None, plt=False):
     mask_aa = get_aa_mask(u, boundary=boundary_val)
-    mask_sp1, mask_sp2, mask_sp3 = get_sp_masks(u, mask_aa, delta=delta_val)
+    mask_sp1, mask_sp2, mask_sp3, _, _ = get_sp_masks(u, mask_aa, delta=delta_val)
     mask_sp1, lines_sp1 = get_sp_line_method2(mask_sp1, plotbool=False)
     mask_sp2, lines_sp2 = get_sp_line_method2(mask_sp2, plotbool=False)
     mask_sp3, lines_sp3 = get_sp_line_method2(mask_sp3, plotbool=False)

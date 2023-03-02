@@ -97,7 +97,7 @@ def strain_method_3(u, points, variable_region, anomtol=0.05):
         obj = np.sum(refitbool.flatten())
         print('objective is ', obj, 'w/ tol ', tol)
         return wd, refitbool, obj
-    def you_idiot(u, refit):
+    def pick_local_optimal(u, refit):
         for x in range(u.shape[0]):
             for y in range(u.shape[1]):
                 if refit[x,y] and y<u.shape[1]-1 and not refit[x,y+1]:
@@ -113,11 +113,11 @@ def strain_method_3(u, points, variable_region, anomtol=0.05):
                     u[x,y,:] = getclosestequiv(u[x,y], u[x-1,y])
                     refit[x,y] = False
         return u, refit
-    def you_idiot_cycle(u, wd, refitbool):
+    def pick_local_optimal_cycle(u, wd, refitbool):
         wd, refitbool, obj = plthelp(u, wd, tol=0.005)
         while True:
             uprev = u.copy()
-            u, refitbool = you_idiot(u.copy(), refitbool) 
+            u, refitbool = pick_local_optimal(u.copy(), refitbool) 
             obj_prev = obj
             wd, refitbool, obj = plthelp(u, wd, tol=0.005)
             if obj >= obj_prev: 
@@ -135,7 +135,7 @@ def strain_method_3(u, points, variable_region, anomtol=0.05):
     u_new, reg = BFS_from_center_uwrap(1, variable_region.copy(), u.copy(), centers=points, xwid=2, ywid=2, ovlp=1, fittype='median', debug=False, extend=True)  
     wd, refitbool, obj_new = plthelp(u, wd, tol=0.01)
     if obj_new < obj: u = u_new
-    u, refitbool = you_idiot_cycle(u, wd, refitbool)
+    u, refitbool = pick_local_optimal_cycle(u, wd, refitbool)
     wd, refitbool, obj = plthelp(u, wd=wd, tol=0.01)
     toc('some prelims')
     counter = 1
@@ -145,7 +145,7 @@ def strain_method_3(u, points, variable_region, anomtol=0.05):
         u = refit_convex_regions(u, refitbool, maxsize=np.inf, minsize=5, fittype='median')
         toc('refit convex regions {}'.format(counter))
         wd, refitbool, nobj = plthelp(u, wd=wd, tol=0.005)
-        u, refitbool = you_idiot_cycle(u, wd, refitbool)
+        u, refitbool = pick_local_optimal_cycle(u, wd, refitbool)
         if nobj >= obj: break
         counter += 1
     counter = 1
@@ -156,7 +156,7 @@ def strain_method_3(u, points, variable_region, anomtol=0.05):
         u = refit_convex_regions(u, refitbool, maxsize=np.inf, minsize=5, fittype='ip')
         toc('refit convex regions ip {}'.format(counter))
         wd, refitbool, nobj = plthelp(u, wd=wd, tol=0.005)
-        u, refitbool = you_idiot_cycle(u, wd, refitbool)
+        u, refitbool = pick_local_optimal_cycle(u, wd, refitbool)
         if nobj >= obj: 
             u = oldu
             nobj = obj

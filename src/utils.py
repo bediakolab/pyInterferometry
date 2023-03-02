@@ -678,9 +678,9 @@ def unbin(data, bin_w):
 # read in dm4 file and save as h5 file
 ####################################################################################################
 def convert_dm4(scan_shape, datapath=os.path.join('..','data')):
-    fullpath = os.path.join(datapath, 'Diffraction SI.dm4')
+    fullpath = os.path.join(datapath, 'Diffraction_SI.dm4')
     if not os.path.exists(fullpath):
-        print("ERROR: couldn't find Diffraction SI.dm4")
+        print("ERROR: couldn't find Diffraction_SI.dm4")
         exit()
     data = read(fullpath)
     data.set_scan_shape(scan_shape[0],scan_shape[1])

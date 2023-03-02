@@ -276,11 +276,11 @@ class DiskSet:
         if ax is None: f, ax = plt.subplots()
         if origin is None:
             if use_log:
-                im = ax.matshow(dp, norm=LogNorm(vmin=np.min(dp.flatten()), vmax=np.max(dp.flatten())))
+                im = ax.matshow(dp, norm=LogNorm())
             else: im = ax.matshow(dp)
         else:
             if use_log:
-                im = ax.imshow(dp, origin=origin, norm=LogNorm(vmin=np.min(dp.flatten()), vmax=np.max(dp.flatten())))
+                im = ax.imshow(dp, origin=origin, norm=LogNorm())
             else: im = ax.imshow(dp, origin=origin)
         for i in range(self.size):
             # only plot selected disks if selected_only is true

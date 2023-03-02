@@ -12,23 +12,19 @@ from new_utils import parse_filepath
 from visualization import overlay_vdf
 from background import *
 
-def virtualdf_main(ds, background_sub=False):
-
-    probe_kernel, probe_kernel_FT, beamcenter = ds.extract_probe()
+def virtualdf_main(ds, background_sub=False):    
 
     if not ds.check_has_raw():
         print('ERROR: dataset has no raw h5 or dm4 file to use')
         exit(1)
 
+    probe_kernel, probe_kernel_FT, beamcenter = ds.extract_probe()
     datacube, scan_shape = ds.extract_raw()
-
-    print(datacube.data.shape)
-    print(scan_shape)
+    #print(datacube.data.shape)
+    #print(scan_shape)
     max_dp       = np.max(datacube.data, axis=(0,1)).astype(float) #nqx, nqy
     probe_kernel = bin(probe_kernel, int(probe_kernel.shape[0]/max_dp.shape[0]))
-
-    f,ax = plt.subplots(); ax.imshow(max_dp, origin='lower'); plt.show()
-
+    #f,ax = plt.subplots(); ax.imshow(max_dp, origin='lower'); plt.show()
     if not (max_dp.shape[0] == probe_kernel.shape[0] and max_dp.shape[1] == probe_kernel.shape[1]):
         print('resizing kernel')
         qx, qy = max_dp.shape[:]
@@ -105,7 +101,7 @@ def virtualdf_main2(path, probe_kernel, beamcenter):
     with open(savepath, 'wb') as f: pickle.dump( diskset, f )
 
     print('masking')
-    f, ax = plt.subplots(1,2)
+    #f, ax = plt.subplots(1,2)
     sum_dp    = np.sum(datacube.data, axis=(0,1)).astype(float)
     mask_peak = get_peak_mask(max_dp.shape[0], max_dp.shape[1], peaks, diskset, max_dp, dsnum, radius_factor=2.0)
     if boolquery("mask off beamstop? (done automatically, tends to correctly identify if there is no bs but can fail)"):
@@ -115,9 +111,9 @@ def virtualdf_main2(path, probe_kernel, beamcenter):
         masked_dp = mask_off(max_dp, [mask_peak], dsnum)
     anom_mask = get_anomoly_mask(masked_dp, beamcenter, dsnum, bin_w=27)
     masked_dp = mask_off(masked_dp, [anom_mask], dsnum)
-    ax[0].imshow(sum_dp)
-    ax[1].imshow(masked_dp)
-    plt.show()
+    #ax[0].imshow(sum_dp)
+    #ax[1].imshow(masked_dp)
+    #plt.show()
 
     print('background subtraction')
     beamcenter = diskset.set_com_central()

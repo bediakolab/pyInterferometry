@@ -20,13 +20,36 @@ from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
 from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_rzcartesian
 from strain import strain, unscreened_piezocharge, strain_induced_polarization, strain_method_3
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
-from new_utils import normNeighborDistance, crop_displacement
+from new_utils import normNeighborDistance, crop_displacement, parse_filepath
 from scipy import ndimage
 from unwrap_utils import normDistToNearestCenter, getAdjacencyMatrix, automatic_sp_rotation, neighborDistFilter, geometric_unwrap, geometric_unwrap_tri
 
 def bombout(message):
     print(message)
     exit(1)
+
+def load_existing_dataset():
+    dspaths = glob.glob(os.path.join('..', 'data', '*', 'ds*'))
+    print('KEY:\t\t Name\t\t\t\t\t Has Raw?\t Has VDFs?\t Has Disps?\t Has Unwrap?')
+    for i in range(len(dspaths)):
+        dspath = dspaths[i] 
+        ds = DataSetContainer(dspath)
+        has_disp   = ds.check_has_displacement()
+        has_disks  = ds.check_has_diskset()
+        has_unwrap = ds.check_has_unwrapping()
+        has_raw    = ds.check_has_raw()
+        name       = ds.name
+        print('{}:\t{}\t\t\t{}\t\t{}\t\t{}\t\t{}'.format(i, name, has_raw, has_disks, has_disp, has_unwrap))
+    indx = int(input("Which Dataset to Use? ---> ").lower().strip())
+    return DataSetContainer(dspaths[indx])
+
+def load_all_datasets():
+    dspaths = glob.glob(os.path.join('..', 'data', '*', 'ds*'))
+    dsets = []
+    for i in range(len(dspaths)):
+        dspath = dspaths[i] 
+        dsets.append(DataSetContainer(dspath))
+    return dsets  
 
 def compile_spreadsheet():
     dspaths = glob.glob(os.path.join('..', 'data', '*', 'ds*'))
@@ -296,24 +319,37 @@ class DataSetContainer:
         self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
 
         # fields to hold the data
-        self.u_unwrap       = None     # set by extract_unwraping, update_unwrapping
+        self.u_unwrap       = None    # set by extract_unwraping, update_unwrapping
         self.u_wrapped_bin  = None  
         self.u_wrapped      = None    # set by extract_displacement, update_displacement
         self.centers        = None    # set by extract_unwraping, update_adjacency
-        self.adjacency_type = None  # set by extract_unwraping, update_adjacency
-        self.diskset        = None  # set by extract_diskset, update_diskset
+        self.adjacency_type = None    # set by extract_unwraping, update_adjacency
+        self.diskset        = None    # set by extract_diskset, update_diskset
         self.raw_data       = None
 
         self.parameter_dict = default_parameters # defined in globals.py  
         self.parameter_dict_comments = dict() 
         self.write_directory()
+
+        with open(os.path.join(self.folderpath, "tmp.txt"), 'r') as f: orig_dir = f.readline()
+        _, dsnum, scan_shape, ss = parse_filepath(orig_dir, ss=True)
+        
+        self.update_parameter("ScanShapeX", scan_shape[0], "parsed from given directory")
+        self.update_parameter("ScanShapeY", scan_shape[1], "parsed from given directory")
+        self.update_parameter("PixelSize",  ss, "parsed from given directory")
+        self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")        
         self.update_material_parameters(folderprefix)
         #self.update_parameter("SmoothingSigma", 2.0, "asssumed, default")
         #self.update_parameter("PixelSize", 0.5, "asssumed, default")
         self.update_parameter("FittingFunction", "A+Bcos^2+Csincos", "asssumed, default")
         self.update_parameter("BackgroundSubtraction", "Lorenzian", "asssumed, default")
         #self.set_sample_rotation()
+
+        if not self.check_parameter_is_set("HeteroBilayer"):
+            print('please set HeteroBilayer to yes, t, y, or true if it is a HeteroBilayer.')
+            self.update_parameter("HeteroBilayer")
         self.update_data_flags()
+
 
     def set_sample_rotation(self):
         if self.check_parameter_is_set("SampleRotation"): 
@@ -402,7 +438,7 @@ class DataSetContainer:
     def extract_probe(self, indx=None):
         from utils import get_probe
         if not os.path.exists(self.parameter_dict["ProbeUsed"]):    
-            probes = glob.glob(os.path.join('..', 'data', 'probe*'))
+            probes = glob.glob(os.path.join('..', 'probes', '*'))
             if indx == None:
                 for i in range(len(probes)): print('{}:    {}'.format(i, probes[i]))
                 indx = int(input("Which Probe File to Use? ---> ").lower().strip())
@@ -1676,7 +1712,7 @@ class DataSetContainer:
         if not self.check_has_raw():
             print("ERROR: {} has no raw dataset file.".format(self.name))
             exit(1)
-        elif not os.path.exists(self.rawpathh5):
+        elif not (os.path.exists(self.rawpathh5) or os.path.islink(self.rawpathh5)):
             data = py4DSTEM.io.read(self.rawpathdm)
             data.set_scan_shape(scan_shape0, scan_shape1)
             py4DSTEM.io.save(self.rawpathh5, data, overwrite=True)
@@ -1720,7 +1756,10 @@ class DataSetContainer:
 
     def check_has_diskset(self): return os.path.exists(self.diskpath)
 
-    def check_has_raw(self): return os.path.exists(self.rawpathdm) or os.path.exists(self.rawpathh5)
+    def check_has_raw(self): 
+        hasdm4 = os.path.exists(self.rawpathdm) or os.path.islink(self.rawpathdm)
+        hash5 = os.path.exists(self.rawpathh5) or os.path.islink(self.rawpathh5)
+        return hasdm4 or hash5
 
     def check_has_unwrapping(self): return os.path.exists(self.unwrappath)
 
@@ -1842,6 +1881,3 @@ class DataSetContainer:
                 self.u_wrapped_bin = data[-1] # stored as diskset, coefs, ufit
             return self.u_wrapped_bin
 
-
-if __name__ == '__main__':
-    main()

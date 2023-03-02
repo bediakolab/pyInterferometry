@@ -143,11 +143,11 @@ def get_sp_masks(ufit, aa_mask, delta=np.pi/12, plotbool=False, include_aa=True,
     """
 
     if include_aa:
-        mask_sp1 = mask_sp1 | aa_mask
-        mask_sp2 = mask_sp2 | aa_mask
-        mask_sp3 = mask_sp3 | aa_mask
-        mask_xx = mask_xx | aa_mask
-        mask_mm = mask_mm | aa_mask
+        mask_sp1 = mask_sp1.astype(int) | aa_mask.astype(int)
+        mask_sp2 = mask_sp2.astype(int) | aa_mask.astype(int)
+        mask_sp3 = mask_sp3.astype(int) | aa_mask.astype(int)
+        mask_xx = mask_xx.astype(int) | aa_mask.astype(int)
+        mask_mm = mask_mm.astype(int) | aa_mask.astype(int)
 
     if exclude_aa:
         mask_sp1 = ((mask_sp1.astype(int) - aa_mask.astype(int)) > 0 ).astype(int)

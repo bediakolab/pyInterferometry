@@ -305,24 +305,32 @@ def get_area(a, b, c):
     s = (a + b + c)/2
     return np.sqrt(s*(s-a)*(s-b)*(s-c))
 
-def parse_filepath(path):
+def parse_filepath(path, ss=False):
     tmp        = path.replace('\\','/').replace('//','/').split('/')
     tmp        = [el for el in tmp if len(el.strip()) > 0]
     prefix     = tmp[-2]
     dsnum      = int(tmp[-1].split("_")[0])
-    tmp        = tmp[-1].split("_")[1]
+    tmp2       = tmp[-1].split("_")[1]
+    scan_shape = [ int(tmp2.split("x")[0]), int(tmp2.split("x")[1]) ]
+    if not ss: return prefix, dsnum, scan_shape
+    ss_val = tmp[-1].split("_")[2]
+    return prefix, dsnum, scan_shape, ss_val
+
+def parse_filename(name):
+    dsnum      = int(name.split("_")[0])
+    tmp        = name.split("_")[1]
     scan_shape = [ int(tmp.split("x")[0]), int(tmp.split("x")[1]) ]
-    return prefix, dsnum, scan_shape
+    return dsnum, scan_shape
 
 def get_diskset_index_options():
     pickles = glob.glob(os.path.join('..', 'results', '*', '*pkl'))
     return [i for i in range(len(pickles))]
 
 def import_probe(indx=None):
-    probes = glob.glob(os.path.join('..', 'data', 'probe*'))
+    probes = glob.glob(os.path.join('..', 'probes', '*dm3'))
     if indx == None:
         for i in range(len(probes)): print('{}:    {}'.format(i, probes[i]))
-        indx = int(input("which to use? ").lower().strip())
+        indx = int(input("which probe should I use? ").lower().strip())
     filepath = probes[indx]
     return filepath
 
