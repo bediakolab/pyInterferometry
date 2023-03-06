@@ -799,17 +799,17 @@ def unwrapBFS(adjacency_type, centers, start):
                     else: sign = 1 # if increasing in y we're adding v1 so n here increases by 1, else decrease by 1
                     expect = nmcenters[vert, :] + [sign*1,0]
                     if (nmcenters[neighbor, 0] != expect[0] or nmcenters[neighbor, 1] != expect[1]):
-                        print('inconsistency in the center adjacencies, please make sure connections are good and try again')
+                        print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
                         print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 1))
-                        exit()
+                        print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
                 if adjacency_type[neighbor, vert] == 2: # sp2 type adjacency
                     if centers[neighbor][1] > centers[vert][1]: sign = -1
                     else: sign = 1 # if increasing in x we're adding v2 so m here increases by 1, else decrease by 1
                     expect = nmcenters[vert, :] + [0,sign*1]
                     if (nmcenters[neighbor, 0] != expect[0] or nmcenters[neighbor, 1] != expect[1]):    
-                        print('inconsistency in the center adjacencies, please make sure connections are good and try again')
+                        print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
                         print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 2))
-                        exit()
+                        print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
     for vert in range(adjacency_type.shape[0]):
         if not visited[vert]:
             print('Error, found erroneous AA center unconnected to neighbors, please remove and try again. Note SP3(y) ignored')

@@ -121,16 +121,12 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
     if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
     u = cartesian_to_rz_WZ(u, sign_wrap=False)
 
-    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
-    points = [ [c[1], c[0]] for c in centers ]
-    u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=False) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
     if transp:
         uorig = u.copy()
         for i in range(uorig.shape[0]):
             for j in range(uorig.shape[1]):
                 for d in range(uorig.shape[2]):
                     u[i,j,d] = uorig[j,i,d]
-    #centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
 
     if False: # sanity checking orrientation
         f, axes = plt.subplots(5,2)
@@ -152,7 +148,7 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
         displacement_colorplot(axes[3,1], u_wrapped_t_rot[:N,:N,:], sample_angle=0, quiverbool=True)
         axes[4,0].quiver(u[:N,:N,0],u[:N,:N,1])
         displacement_colorplot(axes[4,1], u[:N,:N,:], sample_angle=0, quiverbool=True)
-        axes[0,0].title.set_text('untranspose')
+        axes[0,0].title.set_text('untranspose, r=0')
         axes[1,0].title.set_text('transpose, r=0')
         axes[2,0].title.set_text('transpose, r=-pi/3')
         axes[3,0].title.set_text('transpose, r=pi/3')
@@ -173,6 +169,11 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
             break
         else:
             print('unrecognized/unimplemented method please try again'.format(methodid))
+
+    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
+    points = [ [c[1], c[0]] for c in centers ]
+    u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=True) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
+    #centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
 
     #print('WARNING NOT UNWRAPPING BOMB OUT TO SAVE ADJ MAT ONLY')
     #ds.update_unwraping(u, centers, adjacency_type)
