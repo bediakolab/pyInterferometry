@@ -105,29 +105,6 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
 
     centerdist, boundary_val, delta_val, combine_crit, spdist = 0.01, 0.3, 0.3, 0.0, 2.0
 
-    if ds.u_wrapped is None: ds.extract_displacement_fit()
-    u = ds.u_wrapped.copy()
-
-    img = displacement_colorplot(None, u)
-    crop_displacement(img, u)
-    u = u[pad:-pad, pad:-pad, :]
-    nx, ny = u.shape[0], u.shape[1]
-    n = np.min([nx, ny])
-    if n % 2 != 0: 
-        u = u[:n-1, :n-1]
-        nx, ny = u.shape[0], u.shape[1]
-    else: u = u[:n, :n]
-    assert(u.shape[0] % 2 == 0)
-    if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
-    u = cartesian_to_rz_WZ(u, sign_wrap=False)
-
-    if transp:
-        uorig = u.copy()
-        for i in range(uorig.shape[0]):
-            for j in range(uorig.shape[1]):
-                for d in range(uorig.shape[2]):
-                    u[i,j,d] = uorig[j,i,d]
-
     if False: # sanity checking orrientation
         f, axes = plt.subplots(5,2)
         N = 50
@@ -170,25 +147,85 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
         else:
             print('unrecognized/unimplemented method please try again'.format(methodid))
 
-    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
+    """
+    if ds.extract_parameter("DisplacementBasis", param_type=str) != "Cartesian":
+        print('transforming LV to Cartesian')
+        u = latticevec_to_cartesian(ds.u_wrapped.copy())
+    else:
+        u = ds.u_wrapped.copy()
+
+    while True:
+        methodid = input("Method? \n1: voronoi (good for large twist data, P or AP) \n2: watershed (good for most AP data unless very large twist)\n").lower().strip()[0] 
+        if int(methodid) == 1: 
+            voronibool, tribool = True, False
+            ds.update_parameter("UnwrapMethod", "Voronoi", "unwrap_main")
+            break
+        elif int(methodid) == 2: 
+            voronibool, tribool = False, False
+            print('using watershed')
+            ds.update_parameter("UnwrapMethod", "Watershed", "unwrap_main")
+            break
+        else:
+            print('unrecognized/unimplemented method please try again'.format(methodid))
+
+    img = displacement_colorplot(None, u)
+    crop_displacement(img, u)
+
+    u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
+    u = cartesian_to_rz_WZ(u, sign_wrap=False)
+    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
     points = [ [c[1], c[0]] for c in centers ]
     u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=True) # rotate so sp closest to vertical is sp1, gvector choice degenerate under 2pi/3 rotations so arbitrary sp1/sp2/sp3
-    #centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist)
+    if not tribool: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap(centers, adjacency_type, u, voronibool, plotting=True) 
+    else: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap_tri(centers, adjacency_type, u) 
+    dists = normDistToNearestCenter(u.shape[0], u.shape[1], centers)
+    variable_region = (dists > centerdist).astype(int)
+    u = strain_method_3(u_unwrapped, points, variable_region)
+    if nan_filter: u = neighborDistFilter(u, thresh=nan_thresh)
+    """
+    #4dstempc
+    nan_filter = False
+    flip = True    
+    transp = False 
 
-    #print('WARNING NOT UNWRAPPING BOMB OUT TO SAVE ADJ MAT ONLY')
-    #ds.update_unwraping(u, centers, adjacency_type)
-    #f, ax = plt.subplots()
-    #ax.quiver(u[:,:,0], u[:,:,1])
-    #plt.show()
-    #return u, centers, adjacency_type  
+    #main
+    #nan_filter = False
+    #flip = False    
+    #transp = True 
+
+    if ds.u_wrapped is None: ds.extract_displacement_fit()
+    u = ds.u_wrapped.copy()
+    img = displacement_colorplot(None, u)
+    crop_displacement(img, u)
+
+    u = u[pad:-pad, pad:-pad, :]
+    nx, ny = u.shape[0], u.shape[1]
+    n = np.min([nx, ny])
+    if n % 2 != 0: 
+        u = u[:n-1, :n-1]
+        nx, ny = u.shape[0], u.shape[1]
+    else: u = u[:n, :n]
+    assert(u.shape[0] % 2 == 0)
+    
+    if flip: u[:,:,0], u[:,:,1] = -u[:,:,0], u[:,:,1]
+    u = cartesian_to_rz_WZ(u, sign_wrap=False)
+    if transp:
+        uorig = u.copy()
+        for i in range(uorig.shape[0]):
+            for j in range(uorig.shape[1]):
+                for d in range(uorig.shape[2]):
+                    u[i,j,d] = uorig[j,i,d]
+
+    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
+    points = [ [c[1], c[0]] for c in centers ]
+    u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=True) 
 
     if not tribool: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap(centers, adjacency_type, u, voronibool, plotting=True) 
     else: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap_tri(centers, adjacency_type, u) 
     dists = normDistToNearestCenter(u.shape[0], u.shape[1], centers)
     variable_region = (dists > centerdist).astype(int)
-    print("centers used in unwrapping: ")
-    for point in points:  print("   ", point)
     u = strain_method_3(u_unwrapped, points, variable_region)
+    #if nan_filter: u = neighborDistFilter(u, thresh=nan_thresh)
     return u, centers, adjacency_type   
 
 def stder(v): return np.std(v, ddof=1) / np.sqrt(np.size(v))
