@@ -4,8 +4,10 @@ Python code for preforming Bragg Interferometry, a data analysis technique for 4
 Implemented for and used in Ref [2].
 
 ## Citation
-Please see and cite the following manuscripts for a description of the method. 
+Please see and cite the following manuscripts for a description of the method.
+
 1: Kazmierczak, Nathanael P., et al. Nature materials 20.7 (2021): 956-963.
+
 2: Van Winkle, Madeline, et al. arXiv preprint arXiv:2212.07006 (2022).
 
 ## Contact
