@@ -20,3 +20,6 @@ Then place a Diffraction_SI.dm4 or dp.h5 in each folder.
 You can then run the code from the driver script "main.py" which will guide you through the analysis workflow, asking for user input when needed.
 All processed data and images will be saved in the corresponding data/Material_Name/dsN directories (where N is the dataset number). 
 
+## Examples
+An example of a processed dataset is given in data/MoS2_AP/ds6. 
+Raw h5.dp and processed diskset.pkl files used in Ref [2] are available on [TBD! Need to upload]. 
