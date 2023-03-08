@@ -1,0 +1,9 @@
+*.svg
+*/*.svg
+*.xlsx
+*/*.xlsx
+*/*.txt
+*.png
+*/*.png
+.DS_Store
+*/.DS_Store
