@@ -6,9 +6,9 @@ Implemented for and used in Ref [2].
 ## Citation
 Please see and cite the following manuscripts for a description of the method.
 
-1: Kazmierczak, Nathanael P., et al. Nature materials 20.7 (2021): 956-963.
+1: Nathanael P. Kazmierczak, Madeline Van Winkle, et al. Nature materials 20.7 (2021): 956-963.
 
-2: Van Winkle, Madeline, et al. arXiv preprint arXiv:2212.07006 (2022).
+2: Madeline Van Winkle, Isaac M. Craig, et al. arXiv preprint arXiv:2212.07006 (2022).
 
 ## Contact
 Please contact me with any questions, issues, or requests.
