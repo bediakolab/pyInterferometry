@@ -8,7 +8,7 @@ Please see and cite the following manuscripts for a description of the method.
 
 1: Nathanael P. Kazmierczak, Madeline Van Winkle, et al. Nature materials 20.7 (2021): 956-963.
 
-2: Madeline Van Winkle, Isaac M. Craig, et al. arXiv preprint arXiv:2212.07006 (2022).
+2: Madeline Van Winkle, Isaac M. Craig, et al. Nat Commun 14, 2989 (2023). (In particular the SI of this work described many details of this codebase)
 
 ## Contact
 Please contact me with any questions, issues, or requests.
