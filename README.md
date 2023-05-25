@@ -22,4 +22,4 @@ All processed data and images will be saved in the corresponding data/Material_N
 
 ## Examples
 An example of a processed dataset is given in data/MoS2_AP/ds6. 
-Raw h5.dp and processed diskset.pkl files used in Ref [2] are available on [TBD! Need to upload]. 
+A raw Diffraction_SI.dm4 and processed diskset.pkl files used in Ref [2] are available on https://zenodo.org/record/7865970
