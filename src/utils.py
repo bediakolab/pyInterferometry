@@ -680,11 +680,12 @@ def unbin(data, bin_w):
 def convert_dm4(scan_shape, datapath=os.path.join('..','data')):
     fullpath = os.path.join(datapath, 'Diffraction_SI.dm4')
     if not os.path.exists(fullpath):
-        print("ERROR: couldn't find Diffraction_SI.dm4")
-        exit()
+        print("WARNING: couldn't find Diffraction_SI.dm4")
+        return False
     data = read(fullpath)
     data.set_scan_shape(scan_shape[0],scan_shape[1])
     py4DSTEM.io.save(os.path.join(datapath,'dp.h5'),data,overwrite=True)
+    return True
 
 ####################################################################################################
 # read in dm4 files and save as h5 files for a batch of datasets, each stored within folders

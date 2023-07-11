@@ -324,6 +324,7 @@ class DataSetContainer:
         self.folderprefix = folderprefix
 
         # plots to save, edit here to change directory organization
+        self.stackcolormapath = os.path.join(self.plotpath, "stackcolor.png")
         self.twistplotpath    = os.path.join(self.plotpath, "twist.png")
         self.catplotpath      = os.path.join(self.plotpath, "categorize.png")
         self.dispplotpath     = os.path.join(self.plotpath, "displacement.png")
@@ -399,7 +400,6 @@ class DataSetContainer:
             print('please set HeteroBilayer to yes, t, y, or true if it is a HeteroBilayer.')
             self.update_parameter("HeteroBilayer")
         self.set_sample_rotation()
-
 
     def set_sample_rotation(self):
         if self.check_parameter_is_set("SampleRotation"): 
@@ -496,6 +496,31 @@ class DataSetContainer:
             print(probes[indx])
             print(self.parameter_dict["ProbeUsed"])
         return get_probe(self.parameter_dict["ProbeUsed"])
+
+
+    # makes the bivariate colormap
+    def make_stack_colormap(self, showflag=False):
+        if self.diskset is None: self.extract_diskset()
+        diskset = self.diskset
+        f, ax = plt.subplots(1, 1)
+        gvecs = diskset.clean_normgset()
+        ringnos = diskset.determine_rings()
+        counter = 0
+        ring1 = np.zeros((diskset.nx, diskset.ny))
+        ring2 = np.zeros((diskset.nx, diskset.ny))
+        for n in range(diskset.size):
+            if diskset.in_use(n): 
+                img = diskset.df(n)
+                ringno = ringnos[counter]
+                if ringno == 1: ring1 += img
+                elif ringno == 2: ring2 += img
+                counter += 1
+        rgb = make_coloredvdf(ring1, ring2, dfs, gaussian_sigma=None)
+        ax.imshow(rgb)
+        ax.axis("off")
+        if not showflag: plt.savefig(self.stackcolormapath, dpi=300)
+        if not showflag: plt.close()
+        if showflag: plt.show()
 
     def make_vdf_plots(self, showflag=False):
 
@@ -772,7 +797,7 @@ class DataSetContainer:
             plt.savefig(self.catplotpath, dpi=300)
             plt.close('all')
 
-    def make_sanity_residuals(self, transp=False):
+    def make_sanity_residuals(self, smooth_unwrap=False, transp=False):
 
         coefs = self.extract_coef_fit()
         if len(coefs) == 3:
@@ -811,49 +836,69 @@ class DataSetContainer:
                     u    = [self.u_wrapped_raw[i,j,0], self.u_wrapped_raw[i,j,1]]
                     df_tot[i,j]   = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
                     df_tot[i,j]  += B[n] * (np.cos(np.pi * np.dot(gvec, u)))*(np.sin(np.pi * np.dot(gvec, u)))
-                    df_Aonly[i,j] = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
-                    df_Bonly[i,j] = B[n] * (np.cos(np.pi * np.dot(gvec, u)))*(np.sin(np.pi * np.dot(gvec, u)))
                     df_tot[i,j]  += C[n] 
             dfs.append(df_tot)
-            dfsA.append(df_Aonly)
-            dfsB.append(df_Bonly)
             AB_ratio.append(np.abs(B[n]/A[n]) * 100)
+        for n in range(len(g)): 
+            nx, ny = dfs[n].shape
+            normdf = normalize(dfs[n].flatten())
+            dfs[n] = normdf.reshape(nx, ny)
+
+        if False:
+            fig, axes = plt.subplots(3,3)
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+            for n in range(3):
+                im = axes[n,0].imshow(dfs[n],   cmap='gray')#, vmin=0., vmax=1.)
+                divider = make_axes_locatable(axes[n,0])
+                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
+                im = axes[n,1].imshow(I[n,:,:], cmap='gray')#, vmin=0., vmax=1.)
+                divider = make_axes_locatable(axes[n,1])
+                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
+                im = axes[n,2].imshow(I[n,:,:] - dfs[n], cmap='gray')
+                divider = make_axes_locatable(axes[n,2])
+                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
+            plt.show()
+            #exit()
         
         print("mean unsigned B/A is ", np.mean(AB_ratio), " percent")
-        f, axes = plt.subplots(6,10)
+        f, axes = plt.subplots(6,6)
 
-        mean_resid_all_disks = []
+        resid_all_disks = []
 
         for n in range(6):
-            axes[n,0].imshow(dfs[n], cmap='gray', vmin=0., vmax=1.)
+            axes[n,0].imshow(dfs[n],   cmap='gray', vmin=0., vmax=1.)
             axes[n,1].imshow(I[n,:,:], cmap='gray', vmin=0., vmax=1.)
-            axes[n,2].imshow(dfsA[n], vmin=-1., vmax=1.)
-            axes[n,3].imshow(dfsB[n], vmin=-1., vmax=1.)
-            axes[n,4].imshow(I[n,:,:] - dfs[n], cmap='gray')
-            mean_resid_all_disks.append( 100*np.mean(np.abs((I[n,:,:] - dfs[n])).flatten()) )
+            #axes[n,2].imshow(dfsA[n], vmin=-1., vmax=1.)
+            #axes[n,3].imshow(dfsB[n], vmin=-1., vmax=1.)
+            axes[n,2].imshow(I[n,:,:] - dfs[n], cmap='gray')
+            resid_all_disks.extend( ((I[n,:,:] - dfs[n])).flatten() )
             axes[n,0].set_title('fit {}-{}{}'.format(n, g[n][1], g[n][0])); 
             axes[n,1].set_title('raw {}-{}{}'.format(n, g[n][1], g[n][0])); 
-            axes[n,2].set_title('cos2'); 
-            axes[n,3].set_title('sincos'); 
-            axes[n,4].set_title('resid'); 
+            #axes[n,2].set_title('cos2'); 
+            #axes[n,3].set_title('sincos'); 
+            axes[n,2].set_title('resid'); 
         for n in range(6):
             try:
-                axes[n,5+0].set_title('fit {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-                axes[n,5+1].set_title('raw {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-                axes[n,5+2].set_title('cos2'); 
-                axes[n,5+3].set_title('sincos'); 
-                axes[n,5+4].set_title('resid'); 
-                axes[n,5+0].imshow(dfs[6+n], cmap='gray', vmin=0., vmax=1.)
-                axes[n,5+1].imshow(I[6+n,:,:], cmap='gray', vmin=0., vmax=1.)
-                axes[n,5+2].imshow(dfsA[6+n], vmin=-1., vmax=1.)
-                axes[n,5+3].imshow(dfsB[6+n], vmin=-1., vmax=1.)
-                axes[n,5+4].imshow(I[6+n,:,:] - dfs[6+n], cmap='gray')
-                mean_resid_all_disks.append( 100*np.mean(np.abs((I[n+6,:,:] - dfs[n+6])).flatten()) )
+                axes[n,3].set_title('fit {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
+                axes[n,4].set_title('raw {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
+                #axes[n,5+2].set_title('cos2'); 
+                #axes[n,5+3].set_title('sincos'); 
+                axes[n,5].set_title('resid'); 
+                axes[n,3].imshow(dfs[6+n], cmap='gray', vmin=0., vmax=1.)
+                axes[n,4].imshow(I[6+n,:,:], cmap='gray', vmin=0., vmax=1.)
+                #axes[n,5+2].imshow(dfsA[6+n], vmin=-1., vmax=1.)
+                #axes[n,5+3].imshow(dfsB[6+n], vmin=-1., vmax=1.)
+                axes[n,5].imshow(I[6+n,:,:] - dfs[6+n], cmap='gray')
+                resid_all_disks.extend( ((I[n+6,:,:] - dfs[n+6])).flatten() )
             except:
                 continue
 
-        print("mean unsigned error is ", np.mean(mean_resid_all_disks), " percent") 
+        print("mean residual in intensity is ", np.mean(resid_all_disks)) 
+        print("std  residual in intensity is ",  np.std(resid_all_disks)) 
+        self.update_parameter("FitMeanResidual", np.mean(resid_all_disks) , "main")
+        self.update_parameter("FitSTDResidual", np.std(resid_all_disks),    "main")
         plt.savefig(self.sanity_vdf, dpi=300)
+        #plt.show()
         plt.close('all')
  
     def make_displacement_plot(self, showflag=False, rewrite=False):

@@ -54,8 +54,8 @@ def set_up_files(useh5=True):
             if useh5 and not os.path.exists(os.path.join(savepath, 'dp.h5')): 
                 if not os.path.exists(os.path.join(m_dir, 'dp.h5')): 
                     print('converting a dm4 to a h5 file')
-                    convert_dm4(scan_shape, m_dir)
-                shutil.copyfile(os.path.join(m_dir, 'dp.h5'), os.path.join(savepath, "dp.h5"))
+                    success = convert_dm4(scan_shape, m_dir)
+                if success : shutil.copyfile(os.path.join(m_dir, 'dp.h5'), os.path.join(savepath, "dp.h5"))
             elif (not useh5) and not os.path.exists(os.path.join(savepath, 'dp.dm4')):
                 shutil.copyfile(os.path.join(m_dir, 'Diffraction_SI.dm4'), os.path.join(savepath, "dp.dm4"))
             print("working on dataset {} of {} ".format(datasetnum, name))
@@ -150,6 +150,8 @@ def main():
             ds.make_adjacency_plot()
             rigid_dil, rigid_twist, rigid_gamma = ds.make_twist_plot()
             ds.make_strainplots_localsubtraction(rigid_twist, rigid_dil, rigid_gamma)
+            #ds.calculate_uncertainties()
+            ds.make_sanity_residuals()
 
         ds.update_data_flags()
         counter += 1

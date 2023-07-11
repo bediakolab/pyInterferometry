@@ -20,21 +20,96 @@ from new_utils import import_uvector, import_diskset, import_unwrap_uvector, nor
 from utils import writefile
 
 
-def make_coloredvdf(ring1, ring2, dfs):
-    avgring1 = np.zeros((dfs.shape[1], dfs.shape[2]))
-    avgring2 = np.zeros((dfs.shape[1], dfs.shape[2]))
-    for i in ring1: avgring1 += dfs[i,:,:]
-    for i in ring2: avgring2 += dfs[i,:,:]
-    avgring1 = gaussian_filter(avgring1,1)
+def make_coloredvdf(avgring1, avgring1, gaussian_sigma=1):
+    if gaussian_sigma is not None: 
+        avgring1 = gaussian_filter(avgring1,gaussian_sigma)
     avgring1 = avgring1 - np.nanmin(avgring1.flatten())
     avgring1 = avgring1/np.nanmax(avgring1.flatten())
-    avgring2 = gaussian_filter(avgring2,1)
+    if gaussian_sigma is not None:
+        avgring2 = gaussian_filter(avgring2,gaussian_sigma)
     avgring2 = avgring2 - np.nanmin(avgring2.flatten())
     avgring2 = avgring2/np.nanmax(avgring2.flatten())
     stack_assign[:,:,0] = avgring1[:,:] # r channel
     stack_assign[:,:,2] = avgring2[:,:] # b channel
     stack_assign[:,:,1] = 0.5 * avgring1[:,:] + 0.5 * avgring2[:,:]
     return stack_assign
+
+def displacement_colorplot_ttlg_thresh(ax, Ux, Uy, thresh1=0.5, thresh2=0.5):
+    nx, ny = Ux.shape
+    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g2 = np.array([-1, 1/np.sqrt(3)])
+    gvecs1 = [ g1, g2, g1-g2 ]
+    gvecs2 = [ g1+g2, 2*g2-g1, 2*g1-g2 ]
+    colors1 = np.zeros((nx, ny, 3))
+    maxr1, maxr2 = 0,0
+    for i in range(nx):
+        for j in range(ny):
+            u = [Ux[i,j], Uy[i,j]]
+            umag = (u[0]**2 + u[1]**2)**0.5
+            r1, r2 = 0, 0
+            for n in range(len(gvecs1)): r1 += ((np.cos(np.pi * np.dot(gvecs1[n], u))))**2 
+            for n in range(len(gvecs2)): r2 += ((np.cos(np.pi * np.dot(gvecs2[n], u))))**2 
+            r1, r2 = r1/3, r2/3
+            if r1 > maxr1: maxr1 = r1
+            if r2 > maxr2: maxr2 = r2
+            if r1 > thresh1:    
+                if r2 > thresh2:
+                    colors1[i,j,:] = [169/255,169/255,169/255] #w
+                else:
+                    colors1[i,j,:] = [255/255, 165/255, 0/255] #w
+            else: 
+                if r2 > thresh2: colors1[i,j,:] = [0,0,1] #b
+                else: colors1[i,j,:] = [0,0,0] #k
+    print(maxr1,maxr2)
+    f = 2 * np.max(Ux) * g2[0]
+    colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0)
+    for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
+
+def displacement_colorplot_ttlg(ax, Ux, Uy, inc3layer, abt_offset, f):
+    nx, ny = Ux.shape
+    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g2 = np.array([-1, 1/np.sqrt(3)])
+    gvecs1 = [ g1, g2, g1-g2 ]
+    gvecs2 = [ g1+g2, 2*g2-g1, 2*g1-g2 ]
+    colors1 = np.zeros((nx, ny, 3))
+    maxr1, maxr2 = 0,0
+    minr1, minr2 = np.inf, np.inf
+    for i in range(nx):
+        for j in range(ny):
+            u = [Ux[i,j], Uy[i,j]]
+            if abt_offset:
+                u = np.array(u) + np.array([0, 1/np.sqrt(3)]) 
+            r1, r2 = 0, 0
+            if inc3layer:
+                for n in range(len(gvecs1)): 
+                    r1 += ((np.cos(np.pi * np.dot(gvecs1[n], u))))**2 * 3/4
+                    r1 += ((np.cos(np.pi * np.dot(gvecs1[n], np.array(u)*f))))**2 * 1/4
+                for n in range(len(gvecs2)):  
+                    r2 += ((np.cos(np.pi * np.dot(gvecs2[n], u))))**2 * 3/4
+                    r2 += ((np.cos(np.pi * np.dot(gvecs2[n], np.array(u)*f))))**2 * 1/4
+            else:
+                for n in range(len(gvecs1)): r1 += ((np.cos(np.pi * np.dot(gvecs1[n], u))))**2 
+                for n in range(len(gvecs2)): r2 += ((np.cos(np.pi * np.dot(gvecs2[n], u))))**2 
+            
+            r1, r2 = (r1-3/4)/(3-3/4), (r2-3/4)/(3-3/4)
+            if abt_offset: r1 = 1 - r1  
+            colors1[i,j,0] = r1 
+            colors1[i,j,1] = r1/2 + r2/2 
+            colors1[i,j,2] = r2 
+    if False: #rescales
+        for i in range(nx):
+            for j in range(ny):
+                #minr1, minr2, maxr1, maxr2 = 0.0, 0.0, 0.85, 1.0
+                minr1, minr2, maxr1, maxr2 = 3/4, 3/4, 3, 3
+                colors1[i,j,0] = (colors1[i,j,0] - minr1)/(maxr1-minr1)
+                colors1[i,j,2] = (colors1[i,j,2] - minr2)/(maxr2-minr2)
+                colors1[i,j,1] = (colors1[i,j,0] + colors1[i,j,2])/2
+
+    print(np.max(colors1[:,:,2].flatten()),np.max(colors1[:,:,0].flatten()), np.min(colors1[:,:,2].flatten()), np.min(colors1[:,:,0].flatten()))
+    f = 2 * np.max(Ux) * g2[0]
+    #colors1 = plot_hexagon(ax, nx, ny, colors1, radius=3*1/(2*f), orientation=0) 
+    colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0) 
+    for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(1)
 
 
 def colored_quiver(ax, u_x, u_y, sample_angle=0):
@@ -269,6 +344,7 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
             uyrot = np.cos(sample_angle) * Uy + np.sin(sample_angle) * Ux
             ax.quiver(uxrot, uyrot)
     return colors1
+
 
 ##################################################################
 # plots displacements (cartesian basis) with asymmetric colorplot
@@ -925,7 +1001,7 @@ if __name__ == "__main__":
         plt.show()
         replot_bool = boolquery("would you like to replot another?")
 
-    replot_bool = boolquery("would you like to replot a virtual df?")
+    replot_bool = query("would you like to replot a virtual df?")
     while replot_bool:
         diskset, prefix, dsnum = import_diskset()
         plot_disks(diskset)
