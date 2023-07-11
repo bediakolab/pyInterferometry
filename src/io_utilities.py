@@ -1,11 +1,13 @@
 
 import gc
 import os
-import py4DSTEM
-if py4DSTEM.__version__ != '0.11.5':
-    print('WARNING: you are using py4DSTEM version {}'.format(py4DSTEM.__version__))
-    print('please use py4DSTEM version 0.11.5')
-    print("type 'pip install py4DSTEM==0.11.5' in the virtual environment you're using")
+usep4dstem = True
+if usep4dstem:
+    import py4DSTEM
+    if py4DSTEM.__version__ != '0.11.5':
+        print('WARNING: you are using py4DSTEM version {}'.format(py4DSTEM.__version__))
+        print('please use py4DSTEM version 0.11.5')
+        print("type 'pip install py4DSTEM==0.11.5' in the virtual environment you're using")
 import glob
 from datetime import date
 import matplotlib.pyplot as plt
@@ -15,7 +17,7 @@ import numpy as np
 from globals import default_parameters, default_parameter_filler, known_materials, data_quality_flags, fit_quality_flags, partition_quality_flags
 from heterostrain import extract_twist_hetstrain, plot_twist_hetstrain, plotTris, matrixFromTriangleQuantity
 from unwrap_utils import getAdjacencyMatrixManual, rotate_uvecs
-from visualization import disp_categorize_plot, displacement_colorplot, plot_adjacency, colored_quiver
+from visualization import disp_categorize_plot, displacement_colorplot, plot_adjacency, colored_quiver, make_coloredvdf
 from utils import nan_gaussian_filter, boolquery, normalize, get_triangles
 from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_to_rzcartesian, rotate_uvecs
 from strain import strain, unscreened_piezocharge, strain_induced_polarization, strain_method_3
@@ -515,7 +517,7 @@ class DataSetContainer:
                 if ringno == 1: ring1 += img
                 elif ringno == 2: ring2 += img
                 counter += 1
-        rgb = make_coloredvdf(ring1, ring2, dfs, gaussian_sigma=None)
+        rgb = make_coloredvdf(ring1, ring2, gaussian_sigma=None)
         ax.imshow(rgb)
         ax.axis("off")
         if not showflag: plt.savefig(self.stackcolormapath, dpi=300)

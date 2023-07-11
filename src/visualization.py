@@ -20,7 +20,8 @@ from new_utils import import_uvector, import_diskset, import_unwrap_uvector, nor
 from utils import writefile
 
 
-def make_coloredvdf(avgring1, avgring1, gaussian_sigma=1):
+def make_coloredvdf(avgring1, avgring2, gaussian_sigma=1):
+    stack_assign = np.zeros((avgring1.shape[0], avgring1.shape[1], 3))
     if gaussian_sigma is not None: 
         avgring1 = gaussian_filter(avgring1,gaussian_sigma)
     avgring1 = avgring1 - np.nanmin(avgring1.flatten())

@@ -2,11 +2,13 @@
 import sys
 import os
 import gc
-import py4DSTEM
-if py4DSTEM.__version__ != '0.11.5':
-    print('WARNING: you are using py4DSTEM version {}'.format(py4DSTEM.__version__))
-    print('please use py4DSTEM version 0.11.5')
-    print("type 'pip install py4DSTEM==0.11.5' in the virtual environment you're using")
+usep4dstem = True
+if usep4dstem:
+    import py4DSTEM
+    if py4DSTEM.__version__ != '0.11.5':
+        print('WARNING: you are using py4DSTEM version {}'.format(py4DSTEM.__version__))
+        print('please use py4DSTEM version 0.11.5')
+        print("type 'pip install py4DSTEM==0.11.5' in the virtual environment you're using")
 import glob
 from datetime import date
 import matplotlib.pyplot as plt

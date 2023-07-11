@@ -1,14 +1,16 @@
 
-import py4DSTEM
 import numba
 import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd # for excel io utilites
-from py4DSTEM.io import *
-from py4DSTEM.process.diskdetection import *
-from py4DSTEM.process.virtualimage import *
+usep4dstem = True
+if usep4dstem:
+    import py4DSTEM
+    from py4DSTEM.io import *
+    from py4DSTEM.process.diskdetection import *
+    from py4DSTEM.process.virtualimage import *
 from ncempy.io import dm
 from skimage import measure
 from matplotlib.path import Path

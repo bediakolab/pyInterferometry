@@ -1,9 +1,11 @@
 
 import os
 import pickle
-import py4DSTEM
-from py4DSTEM.process.diskdetection import *
-from py4DSTEM.process.virtualimage import *
+usep4dstem = True
+if usep4dstem:
+    import py4DSTEM
+    from py4DSTEM.process.diskdetection import *
+    from py4DSTEM.process.virtualimage import *
 import numpy as np
 from diskset import *
 from masking import *

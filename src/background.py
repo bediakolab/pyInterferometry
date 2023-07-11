@@ -1,7 +1,8 @@
 
 import os
 import pickle
-import py4DSTEM
+usep4dstem = True
+if usep4dstem: import py4DSTEM
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit, least_squares

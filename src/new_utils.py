@@ -1,6 +1,7 @@
 
 import os
-import py4DSTEM.io
+usep4dstem = True
+if usep4dstem: import py4DSTEM.io
 import glob
 import pickle
 import gc
