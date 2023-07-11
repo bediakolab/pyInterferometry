@@ -98,6 +98,7 @@ def main():
         ########################################################
         if ds.check_has_diskset():
             ds.set_sample_rotation()
+            ds.make_stack_colormap() # NEW makes the colormap plot
             ds.make_vdf_plots()
         else:
             print('couldnt find any data to work with...')
