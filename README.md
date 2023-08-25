@@ -26,5 +26,5 @@ A raw Diffraction_SI.dm4 and processed diskset.pkl files used in Ref [2] are ava
 
 ## Common Issues 
 If you see a runtime error saying main thred is not in the main loop, its from matplotlib's backend not being thread safe. 
-Please adjust the backend in the import statements. I had included matplotlib.use('Qt5Agg') when running in serial and showing plots/debugging and matplotlib.use('Agg')
+Please adjust the backend in the import statements. I had included matplotlib.use('Qt5Agg') when running in serial and showing plots with user input and matplotlib.use('Agg')
 when running in parallel and saving plots. Can be architecture specfic. 
