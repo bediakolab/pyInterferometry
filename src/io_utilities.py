@@ -382,15 +382,21 @@ class DataSetContainer:
         self.parameter_dict_comments = dict() 
         self.write_directory()
 
-    def autoset_parameters(self):    
+    def autoset_parameters(self):   
         if os.path.exists(os.path.join(self.folderpath, "tmp.txt")):
+            print('attempting to automatically set aquisition and material parameters')
+            print('parsing from folder prefix of {}'.format(self.folderprefix)) 
             with open(os.path.join(self.folderpath, "tmp.txt"), 'r') as f: 
                 orig_dir = f.readline()
             _, dsnum, scan_shape, ss = parse_filepath(orig_dir, ss=True)
             self.update_parameter("ScanShapeX", scan_shape[0], "parsed from given directory")
             self.update_parameter("ScanShapeY", scan_shape[1], "parsed from given directory")
             self.update_parameter("PixelSize",  ss, "parsed from given directory")
-            self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")    
+            self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")  
+        else:
+            self.update_parameter("ScanShapeX")
+            self.update_parameter("ScanShapeY")
+            self.update_parameter("PixelSize")  
 
         self.update_material_parameters(self.folderprefix)
         #self.update_parameter("SmoothingSigma", 2.0, "asssumed, default")
@@ -450,23 +456,33 @@ class DataSetContainer:
         # asks for manual input of these parameters
         folderprefix = folderprefix.replace('/', '-').replace(':', '-').replace('_', '-')
         split_prefix = folderprefix.split("-")
-        orrientation = split_prefix[-1].lower()
+        if len(split_prefix) > 1: orrientation = split_prefix[-1].lower()
         materials = split_prefix[0:-1]
         materials = [el.lower() for el in materials]
         if len(materials) > 1: 
             self.is_hbl = True
             self.update_parameter("Material", '-'.join(materials))
-        else:
+        elif len(materials) == 1:
             self.update_parameter("Material", materials[0])
             tag = self.extract_parameter("HeteroBilayer", param_type=str)
             if tag is not None and tag.strip().lower() in ['t','y','yes','true']:
                 self.is_hbl = True
             else:
                 self.is_hbl = False
-        self.update_parameter("Orientation", orrientation)
+        else:
+            self.update_parameter("Material")
+            materials = [self.extract_parameter("Material", param_type=str)]
+            self.update_parameter("HeteroBilayer")
+            tag = self.extract_parameter("HeteroBilayer", param_type=str)
+            if tag is not None and tag.strip().lower() in ['t','y','yes','true']:
+                self.is_hbl = True
+            else:
+                self.is_hbl = False
+
+        if len(split_prefix) > 1: self.update_parameter("Orientation", orrientation)
         for material in materials:
             if material not in known_materials.keys():
-                #print("material {} doesnt have tabulated lattice constant data will ask for manual definition".format(material))
+                print("material {} doesnt have tabulated lattice constant data will ask for manual definition".format(material))
                 return
             if known_materials[material][3] is not None:    
                 self.update_parameter("PiezoChargeConstant", known_materials[material][3], "update_material_parameters")
