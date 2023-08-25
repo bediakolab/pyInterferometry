@@ -394,9 +394,12 @@ class DataSetContainer:
             self.update_parameter("PixelSize",  ss, "parsed from given directory")
             self.update_parameter("Original Data Location", orig_dir, "parsed from given directory")  
         else:
-            self.update_parameter("ScanShapeX")
-            self.update_parameter("ScanShapeY")
-            self.update_parameter("PixelSize")  
+            if not self.check_parameter_is_set("ScanShapeX"):
+                self.update_parameter("ScanShapeX")
+            if not self.check_parameter_is_set("ScanShapeY"):
+                self.update_parameter("ScanShapeY")
+            if not self.check_parameter_is_set("PixelSize"):
+                self.update_parameter("PixelSize")  
 
         self.update_material_parameters(self.folderprefix)
         #self.update_parameter("SmoothingSigma", 2.0, "asssumed, default")
@@ -470,9 +473,11 @@ class DataSetContainer:
             else:
                 self.is_hbl = False
         else:
-            self.update_parameter("Material")
+            if not self.check_parameter_is_set("Material"):
+                self.update_parameter("Material")
             materials = [self.extract_parameter("Material", param_type=str)]
-            self.update_parameter("HeteroBilayer")
+            if not self.check_parameter_is_set("HeteroBilayer"):
+                self.update_parameter("HeteroBilayer")
             tag = self.extract_parameter("HeteroBilayer", param_type=str)
             if tag is not None and tag.strip().lower() in ['t','y','yes','true']:
                 self.is_hbl = True
@@ -1490,7 +1495,7 @@ class DataSetContainer:
         if field not in param_dictionary.keys():
             return False
         value = param_dictionary[field]
-        return (value is not default_parameter_filler)    
+        return (value != default_parameter_filler)    
 
     def check_has_displacement(self): return os.path.exists(self.fitpath)
 
