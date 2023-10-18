@@ -322,6 +322,7 @@ class DataSetContainer:
         self.fitbinpath = os.path.join(self.folderpath, "fitbin2.pkl")
         self.unwrappath = os.path.join(self.folderpath, "unwrap.pkl")
         self.diskpath   = os.path.join(self.folderpath, "diskset.pkl")
+        self.maskpath   = os.path.join(self.folderpath, "mask.pkl")
         self.plotpath   = os.path.join(self.folderpath, "plots")
         self.folderprefix = folderprefix
 
@@ -369,6 +370,10 @@ class DataSetContainer:
         self.disp_orrientation_sanity =    os.path.join(self.plotpath, "sanity_disp_orrientation.png")
         self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
 
+        self.masked_diskset_path = os.path.join(self.folderpath, "masked_diskset.pkl")
+        self.maskeddiskplotpath = os.path.join(self.plotpath, "masked_disks.png")
+        self.maskedvdfplotpath = os.path.join(self.plotpath, "masked_vdf.png")
+
         # fields to hold the data
         self.u_unwrap       = None    # set by extract_unwraping, update_unwrapping
         self.u_wrapped_bin  = None  
@@ -376,6 +381,7 @@ class DataSetContainer:
         self.centers        = None    # set by extract_unwraping, update_adjacency
         self.adjacency_type = None    # set by extract_unwraping, update_adjacency
         self.diskset        = None    # set by extract_diskset, update_diskset
+        self.masked_diskset = None
         self.raw_data       = None
 
         self.parameter_dict = default_parameters # defined in globals.py  
@@ -520,6 +526,10 @@ class DataSetContainer:
             print(self.parameter_dict["ProbeUsed"])
         return get_probe(self.parameter_dict["ProbeUsed"])
 
+    def extract_masked_diskset(self):
+        with open(self.masked_diskset_path, 'rb') as f:
+            self.masked_diskset = pickle.load(f)
+        return self.masked_diskset
 
     # makes the bivariate colormap
     def make_stack_colormap(self, showflag=False):
@@ -545,16 +555,24 @@ class DataSetContainer:
         if not showflag: plt.close()
         if showflag: plt.show()
 
-    def make_vdf_plots(self, showflag=False):
+    def make_vdf_plots(self, showflag=False, masked=False):
 
-        if self.diskset is None: self.extract_diskset()
-        #if os.path.exists(self.vdfplotpath): return
-        diskset = self.diskset
-        # saves all disk vdfs
+        if (not masked):
+            self.extract_diskset()
+            diskset = self.diskset
+            pltpath1 = self.diskplotpath
+            pltpath2 = self.vdfplotpath
+            Ndiskparam = "NumberDisksUsed"
+        if (masked):
+            self.exract_masked_diskset()
+            diskset = self.masked_diskset
+            pltpath1 = self.maskeddiskplotpath
+            pltpath2 = self.maskedvdfplotpath
+            Ndiskparam = "NumberDisksUsed_Masked"
+
         counter = 0
         tot_img = np.zeros((diskset.nx, diskset.ny))
-        print(diskset._in_use)
-        self.update_parameter("NumberDisksUsed", diskset.size_in_use, "make_vdf_plots")
+        self.update_parameter(Ndiskparam, diskset.size_in_use, "make_vdf_plots")
         nx, ny = int(np.ceil(diskset.size_in_use ** 0.5)), int(np.ceil(diskset.size_in_use ** 0.5))
         f, axes = plt.subplots(nx, ny)
         axes = axes.flatten()
@@ -570,7 +588,7 @@ class DataSetContainer:
             axes[n].axis("off")
         tot_img = normalize(tot_img)
         plt.subplots_adjust(hspace=0.55, wspace=0.3)
-        if not showflag: plt.savefig(self.diskplotpath, dpi=300)
+        if not showflag: plt.savefig(pltpath1, dpi=300)
         if not showflag: plt.close()
         if showflag: plt.show()
 
@@ -582,8 +600,8 @@ class DataSetContainer:
         ax.set_xticks(np.arange(0, np.round(diskset.nx/50)*50+1, 50))
         ax.set_yticks(np.arange(0, np.round(diskset.ny/50)*50+1, 50))
         for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
-        print("saving vdf plot to {}".format(self.vdfplotpath))
-        if not showflag: plt.savefig(self.vdfplotpath, dpi=300)
+        print("saving vdf plot to {}".format(pltpath2))
+        if not showflag: plt.savefig(pltpath2, dpi=300)
         if not showflag: plt.close()
         if showflag: plt.show()
         if False:
@@ -1353,7 +1371,6 @@ class DataSetContainer:
         self.linecut_avghex(u, mask, gamma, self.gamlinecutpath, self.gamlinecuttxtpath, '$<\\gamma>$')
         #self.linecut_avghex(u, mask, None, self.countlinecutpath, self.countlinecuttxtpath, '$counts$')
            
-
     def update_strain_stats(self, averages, straintype):
         aAA,aSP1,aSP2,aSP3,aMM,aXX = averages[:]
         if straintype == "Percent":
@@ -1393,6 +1410,12 @@ class DataSetContainer:
         if os.path.exists(self.diskpath):
             print('WARNING: overwriting diskset for {}'.format(self.name))
         with open(self.diskpath, 'wb') as f: 
+            pickle.dump( diskset, f )
+
+    def update_masked_diskset(self, diskset):
+        if os.path.exists(self.masked_diskset_path):
+            print('WARNING: overwriting diskset for {}'.format(self.name))
+        with open(self.masked_diskset_path, 'wb') as f: 
             pickle.dump( diskset, f )
 
     def update_displacement_fit(self, coefs, fit):
@@ -1451,19 +1474,26 @@ class DataSetContainer:
         writedict(self.parampath, self.param_dictionary, self.parameter_dict_comments)
         return newvalue
 
-    def extract_raw(self):
+    def extract_raw(self, use_hyperspy=True):
         scan_shape0 = int(self.extract_parameter("ScanShapeX", force_set=True, param_type=float))
         scan_shape1 = int(self.extract_parameter("ScanShapeY", force_set=True, param_type=float))
         if not self.check_has_raw():
             print("ERROR: {} has no raw dataset file.".format(self.name))
             exit(1)
-        elif not (os.path.exists(self.rawpathh5) or os.path.islink(self.rawpathh5)):
-            data = py4DSTEM.io.read(self.rawpathdm)
-            data.set_scan_shape(scan_shape0, scan_shape1)
-            py4DSTEM.io.save(self.rawpathh5, data, overwrite=True)
+        if use_hyperspy:
+            if not os.path.exists(self.rawpathdm):
+                print("need dm4 for the hyperspy loading...")
+                exit(1)
+            import hyperspy.api as hs  
+            data = hs.load(self.rawpathdm, lazy=True)
         else:
-            data = py4DSTEM.io.read(self.rawpathh5, data_id="datacube_0")
-            data.set_scan_shape(scan_shape0, scan_shape1)
+            if not (os.path.exists(self.rawpathh5) or os.path.islink(self.rawpathh5)):
+                data = py4DSTEM.io.read(self.rawpathdm)
+                data.set_scan_shape(scan_shape0, scan_shape1)
+                py4DSTEM.io.save(self.rawpathh5, data, overwrite=True)
+            else:
+                data = py4DSTEM.io.read(self.rawpathh5, data_id="datacube_0")
+                data.set_scan_shape(scan_shape0, scan_shape1)
         self.raw_data = data
         return data, [scan_shape0, scan_shape1]
 
@@ -1501,12 +1531,20 @@ class DataSetContainer:
 
     def check_has_diskset(self): return os.path.exists(self.diskpath)
 
+    def check_has_masked_diskset(self): return os.path.exists(self.masked_diskset_path)
+
+    def check_has_mask(self): return os.path.exists(self.maskpath)
+
     def check_has_raw(self): 
         hasdm4 = os.path.exists(self.rawpathdm) or os.path.islink(self.rawpathdm)
         hash5 = os.path.exists(self.rawpathh5) or os.path.islink(self.rawpathh5)
         return hasdm4 or hash5
 
     def check_has_unwrapping(self): return os.path.exists(self.unwrappath)
+
+    def extract_mask(self):
+        with open(self.maskpath, 'rb') as f: mask = pickle.load(f)
+        return mask
 
     def extract_diskset(self):
         if not self.check_has_diskset():

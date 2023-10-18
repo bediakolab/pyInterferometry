@@ -26,13 +26,14 @@ from basis_utils import latticevec_to_cartesian, cartesian_to_rz_WZ, cartesian_t
 from strain import strain
 from masking import get_aa_mask, get_sp_masks, make_contour_mask
 from io_utilities import DataSetContainer, compile_spreadsheet, unwrap_main,  DataSetContainer, load_existing_dataset, load_all_datasets
-from virtual_df import virtualdf_main
+from virtual_df import virtualdf_main, vdf_from_mask
 from interferometry_fitting import fit_full_hexagon, refit_full_hexagon_from_bin
 from diskset import get_region_average_dp
 from new_utils import chunk_split, parse_filename, import_probe
 from utils import convert_dm4
 
 def set_up_files(useh5=True):
+
     datapath = os.path.join("..", "input")
     print('looking for folders of the format Name/1_100x100... formated like the example in the ../input to read data from')
     print("expect that these folders each contain a dm4 file with the 4dstem. Please put your data in this folder. NOTE, module")
@@ -71,7 +72,7 @@ def set_up_files(useh5=True):
 
 def main():
 
-    set_up_files()
+    #set_up_files()
     useall = boolquery("process everything? (y) or just one dataset? (n)")    
     if useall: dsets = load_all_datasets() 
     else: dsets = [load_existing_dataset()] 
@@ -88,7 +89,6 @@ def main():
         if  (not ds.check_has_diskset()) and ds.check_has_raw() and boolquery("extract disk intensities?"):
             # do the vdf/disk extraction
             datacube, diskset = virtualdf_main(ds)
-            datacube, scan_shape = ds.extract_raw()
             dp = np.max(datacube.data, axis=(0,1)).astype(float) 
             dp = np.transpose(dp)
             diskset = ds.diskset
@@ -104,6 +104,11 @@ def main():
             ds.make_vdf_plots()
         else:
             print('couldnt find any data to work with...')
+
+        if ds.check_has_mask() and boolquery("create/analyze virtual dfs using the given mask?"):
+            if (not ds.check_has_masked_diskset()):
+                datacube, diskset = vdf_from_mask(ds)
+                ds.update_masked_diskset(diskset)
 
         ########################################################
         #### displacement fitting
