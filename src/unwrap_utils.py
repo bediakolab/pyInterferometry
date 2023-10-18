@@ -35,8 +35,7 @@ def watershed_regions(u, boundarythresh=0.5):
     from skimage.feature import peak_local_max
     from skimage.segmentation import watershed
     from scipy import ndimage as ndi
-    import cv2
-
+    
     for i in range(image.shape[0]):
         for j in range(image.shape[1]):
             if np.isnan(image[i,j]): image[i,j] = np.min(image.flatten())

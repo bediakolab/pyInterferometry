@@ -8,7 +8,6 @@ from scipy import ndimage
 import warnings
 from utils import *
 from skimage import measure
-import cv2
 from scipy.spatial import ConvexHull
 
 def convex_mask(img, plotflag=False):

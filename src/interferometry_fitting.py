@@ -1,6 +1,8 @@
 
 import matplotlib
-#matplotlib.use('Agg') # need this backend when rendering within parallelized loops
+do_par_fit_but_not_unwrap = False
+if do_par_fit_but_not_unwrap:
+    matplotlib.use('Agg') # need this backend when rendering within parallelized loops
 # if you see the error 'main thread not in main loop', this is why
 # GUI based backends for mpl need to be in main thread, agg doesnt. but
 # then can't have gui for image manipulations
