@@ -1,6 +1,6 @@
 
 import os
-usep4dstem = True
+usep4dstem = False
 if usep4dstem: import py4DSTEM.io
 import glob
 import pickle

@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd # for excel io utilites
-usep4dstem = True
+usep4dstem = False
 if usep4dstem:
     import py4DSTEM
     from py4DSTEM.io import *
