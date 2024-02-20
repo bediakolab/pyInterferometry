@@ -1,12 +1,13 @@
 
 import os
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 import pickle
 from utils import boolquery
 from new_utils import import_diskset, import_uvector, import_disket_uvector, get_diskset_index_options
-from interferometry_fitting import fit_full_hexagon, refit_full_hexagon_from_bin
+from interferometry_fitting import fit_full_hexagon, refit_full_hexagon_from_bin, do_par_fit_but_not_unwrap
+import matplotlib
+if do_par_fit_but_not_unwrap:
+    matplotlib.use('Agg') # need this backend when rendering within parallelized loops
 
 def interferometry_main_vdf_from_mask(vdf_list, gvecs, prefix, dsnum, binw=1, asym=None):
     if asym is None: asym = boolquery('asymmetric fit w/sincos term? (helpful for AP data, wont affect results for P data)')

@@ -90,6 +90,23 @@ def integrate_disks(datacube, diskset, sub=False, background_fit=None, radius_fa
                 diskset.set_df(n, img)
     return diskset
 
+def integrate_disks_from_mask(datacube, diskset, mask, isLazy=False):
+    nregions = np.max(mask.flatten())+1 
+    for n in range(0, nregions):
+        region_mask = (mask == n)
+        qxvals, qyvals = np.where(region_mask == 1)
+        qxmin, qxmax, qymin, qymax = np.min(qxvals), np.max(qxvals), np.min(qyvals), np.max(qyvals)
+        region_mask_chunk = region_mask[qxmin:qxmax, qymin:qymax]
+        if isLazy:
+            # datacube is massive object, just load small portion that I need if hyperspy lazyload
+            print('loading in revevant chunk from lazy hyperspy import of data')
+            data_chunk = datacube[:,:,qxmin:qxmax, qymin:qymax].compute()
+        else:
+            data_chunk = datacube[:,:,qxmin:qxmax, qymin:qymax]
+        vdf = np.sum(data_chunk*region_mask_chunk, axis=(2,3))/np.sum(region_mask_chunk) 
+        diskset.set_df(n, vdf)
+    return diskset
+
 ####################################################################################################
 # finds the average diffraction pattern corresponding to a given real space area
 # used to visualize and compare the average diffraction pattern in given regions of the dataset
@@ -485,6 +502,7 @@ class DiskSet:
         mean_ang = rotation_sign * np.mean(angs) 
         stderr_ang = np.std(angs, ddof=1)/np.sqrt(np.size(angs))
         if printing: print("{} +/- {} rad".format(mean_ang, stderr_ang))
+        # worked well if cyan and red on top of eachother 
         if sanity_plot:
             f, ax = plt.subplots()
             for i in range(len(g)):
@@ -636,6 +654,21 @@ def get_diskset(dp, peaks, scan_shape, centralbeam, dsnum=None, prefix=None, rad
     else: diskset.plot(dp, saveflag=False)
     return diskset
 
+def get_masked_diskset(scan_shape, mask):
+    nregions = np.max(mask.flatten())+1
+    nx, ny = scan_shape[0], scan_shape[1]
+    masked_ds = DiskSet(nregions, nx, ny)
+    for i in range(nregions):
+        region_mask = (mask == n)
+        qxvals, qyvals = np.where(region_mask == 1)
+        meanqx, meanqy = np.mean(qxvals), np.mean(qyvals)
+        # qx and qy rough locations of each masked disk used to figure out corresponding gvecs
+        # need not be exact since algorithm knows expected gvecs - just to ascribe each vdf to one
+        diskset.set_x(i,meanqx)
+        diskset.set_y(i,meanqy)
+        diskset.set_useflag(i,True) # all disk objects active for the masked approach
+    return diskset
+
 def select_disks(diskset, dp, disks_to_use=None):
     use_log = boolquery('use a log plot?')
     if disks_to_use == None:
@@ -648,4 +681,3 @@ def select_disks(diskset, dp, disks_to_use=None):
         print('ERROR: you didnt select any disks!')
         exit()
     return ndisks_used, diskset
-

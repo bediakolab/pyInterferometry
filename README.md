@@ -23,3 +23,8 @@ All processed data and images will be saved in the corresponding data/Material_N
 ## Examples
 An example of a processed dataset is given in data/MoS2_AP/ds6. 
 A raw Diffraction_SI.dm4 and processed diskset.pkl files used in Ref [2] are available on https://zenodo.org/record/7865970
+
+## Common Issues 
+If you see a runtime error saying main thred is not in the main loop, its from matplotlib's backend not being thread safe. 
+Please adjust the backend in the import statements. I had included matplotlib.use('Qt5Agg') when running in serial and showing plots with user input and matplotlib.use('Agg')
+when running in parallel and saving plots. Can be architecture specfic. 

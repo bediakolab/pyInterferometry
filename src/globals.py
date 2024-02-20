@@ -9,6 +9,7 @@ known_materials = {
 	"mose2" : [0.329, 0.223, 0.230, 3.1e-10],
 	"mote2" : [0.353, 0.248, 0.242, 4.3e-10],
 	"wse2" :  [0.328, None,  None,  None]
+	#"graphene" : [0.246, 0.19, 0.19, None]
 }
 
 # key is ID, value is message given to user when defining it 

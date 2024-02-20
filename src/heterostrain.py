@@ -7,7 +7,6 @@ from PIL import Image
 import numpy as np
 from scipy import ndimage
 import matplotlib.pyplot as plt
-import cv2 as cv
 import glob
 import pickle
 from visualization import *
@@ -254,7 +253,7 @@ def plot_twist_hetstrain(ds, ax1, ax2, thetas, het_strains, tri_centers, N):
 
 def extract_heterostrain(ufit, filenm, params, manual=False):
 
-    matplotlib.use('Qt5Agg')
+    matplotlib.use('Qt5Agg') # need for user input on images BUT not thread safe
     nx, ny = ufit.shape[0:2]
     img = displacement_colorplot(None, ufit)
     if not manual: triangles, centers = auto_triangles(ufit)
@@ -293,7 +292,7 @@ def extract_heterostrain(ufit, filenm, params, manual=False):
 
 def extract_heterostrain_vdf(img, filenm):
 
-    matplotlib.use('Qt5Agg')
+    matplotlib.use('Qt5Agg') # need for user input on images BUT not thread safe
     triangles = manual_define_triangles(img)
     f, ((ax6, ax3), (ax4, ax5)) = plt.subplots(2,2)
     is_hbl, a, pixelsize, poissonratio, delta, given_twist = ask_user()

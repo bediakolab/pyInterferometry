@@ -14,6 +14,17 @@ from new_utils import parse_filepath
 from visualization import overlay_vdf
 from background import *
 
+def vdf_from_mask(ds):
+    print('extracting raw... these are big depending on backend for this can crash')
+    datacube, scan_shape = ds.extract_raw(use_hyperspy=True)
+    print('phew done reading in raw data')
+    mask = ds.extract_mask()
+    masked_diskset = get_masked_diskset(scan_shape, mask)
+    masked_diskset = integrate_disks_from_mask(datacube, masked_diskset, mask, isLazy=True)
+    ds.update_masked_diskset(masked_diskset) 
+    ds.make_vdf_plots(masked_diskset, masked=True) 
+    return datacube, disket
+
 def virtualdf_main(ds, background_sub=False):    
 
     if not ds.check_has_raw():
@@ -22,11 +33,8 @@ def virtualdf_main(ds, background_sub=False):
 
     probe_kernel, probe_kernel_FT, beamcenter = ds.extract_probe()
     datacube, scan_shape = ds.extract_raw()
-    #print(datacube.data.shape)
-    #print(scan_shape)
     max_dp       = np.max(datacube.data, axis=(0,1)).astype(float) #nqx, nqy
     probe_kernel = bin(probe_kernel, int(probe_kernel.shape[0]/max_dp.shape[0]))
-    #f,ax = plt.subplots(); ax.imshow(max_dp, origin='lower'); plt.show()
     if not (max_dp.shape[0] == probe_kernel.shape[0] and max_dp.shape[1] == probe_kernel.shape[1]):
         print('resizing kernel')
         qx, qy = max_dp.shape[:]
