@@ -112,7 +112,6 @@ def displacement_colorplot_ttlg(ax, Ux, Uy, inc3layer, abt_offset, f):
     colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0) 
     for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(1)
 
-
 def colored_quiver(ax, u_x, u_y, sample_angle=0):
     colors = displacement_colorplot(None, u_x, u_y)
     uxrot = np.cos(sample_angle) * u_x - np.sin(sample_angle) * u_y
@@ -159,7 +158,6 @@ def plot_adjacency(img, centers, adjacency_type, ax=None, colored=True):
             elif adjacency_type[i, j] == 3:
                 if colored: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="y")
                 else: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="grey", linewidth=0.5)
-
 
 def new_rgb_to_hsv(r, g, b):
  
@@ -346,6 +344,35 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
             ax.quiver(uxrot, uyrot)
     return colors1
 
+
+def displacement_bivariate2ring(ax, Ux, Uy=None, plot_hexagon_bool=True):
+    if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] 
+    nx, ny = Ux.shape
+    colors1 = np.zeros((nx, ny, 3))
+    g1 = np.array([ 0, 2/np.sqrt(3)])
+    g2 = np.array([-1, 1/np.sqrt(3)])
+    gvecs1 = [ g1, g2, g1-g2 ]
+    gvecs2 = [ g1+g2, 2*g2-g1, 2*g1-g2 ]
+    A1, A2, B1, B2 = 1/3, 1/3, 0, 0
+    for i in range(nx):
+        for j in range(ny):
+            u = [Ux[i,j], Uy[i,j]]
+            I1 = A1*(np.cos(np.pi*np.dot(gvecs1[0], u)))**2 + B1
+            I1 += A1*(np.cos(np.pi*np.dot(gvecs1[1], u)))**2 
+            I1 += A1*(np.cos(np.pi*np.dot(gvecs1[2], u)))**2 
+            I2 = A2*(np.cos(np.pi*np.dot(gvecs2[0], u)))**2 + B2
+            I2 += A2*(np.cos(np.pi*np.dot(gvecs2[1], u)))**2 
+            I2 += A2*(np.cos(np.pi*np.dot(gvecs2[2], u)))**2 
+            colors1[i,j,0] = I1;
+            colors1[i,j,1] = (I1+I2)*0.5;
+            colors1[i,j,2] = I2;
+    if ax is not None:
+        if plot_hexagon_bool:
+            f = 2 * np.max(Ux) * g2[0]
+            colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0)
+        else: ax.imshow(colors1, origin='lower')
+        for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
+    return colors1
 
 ##################################################################
 # plots displacements (cartesian basis) with asymmetric colorplot
@@ -801,6 +828,16 @@ def make_examplefig_categorized(ax=None, plotflag=True, boundary=0.5):
     ax.axis('off')
     if plotflag: plt.show()
 
+def make_legend_bivariate_ttlg(ax=None):
+    xrange = np.arange(-0.50, 0.52, 0.01)
+    nx = len(xrange)
+    U, V = np.meshgrid(xrange, xrange)
+    if ax is None: f, ax = plt.subplots()
+    ax.set_xlim([-15, nx+15])
+    ax.set_ylim([-15, nx+15])
+    displacement_bivariate2ring(ax, U, V, plot_hexagon_bool=True)
+    ax.axis('off')
+
 ##################################################################
 # function to make a legend for the colorplot visualization
 ##################################################################
@@ -906,7 +943,7 @@ if __name__ == "__main__":
         #make_legend_categorized(ax=ax[0], plotflag=False)
         #make_examplefig_categorized(ax[0])
         f, ax = plt.subplots()
-        make_legend(ax, plotflag=False, debugplot=True)
+        make_legend_bivariate_ttlg(ax)
         plt.show()
         #plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
         exit()
