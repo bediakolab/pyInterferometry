@@ -1,6 +1,6 @@
 
 import os
-usep4dstem = False
+usep4dstem = True
 if usep4dstem: import py4DSTEM.io
 import glob
 import pickle
@@ -455,13 +455,22 @@ def import_uvector(indx=None, all=False):
 
 def chunk_split(datapath, chunksize):
     offset = 0
-    for d in [el for el in os.listdir(datapath) if os.path.isdir(os.path.join(datapath, el))]:
+    dirs = [el for el in os.listdir(datapath) if os.path.isdir(os.path.join(datapath, el))]
+
+    for d in dirs:
         m_dir = os.path.join(datapath,d)
         os.makedirs(os.path.join(datapath,'before_chunksplit'), exist_ok=True)
         new_dir = os.path.join(datapath,'before_chunksplit',d)
         os.rename(m_dir, new_dir)
+
+    for d in dirs:
+        new_dir = os.path.join(datapath,'before_chunksplit',d)
         splitd = d.split("_")
-        tmp = splitd[1]
+        try:
+            tmp = splitd[1]
+        except:
+            print('failed to parse {} directory, skipping...'.format(d))
+            continue
         scan_shape = [ int(tmp.split("x")[0]), int(tmp.split("x")[1]) ]
         gc.collect()
         if np.max(scan_shape) > chunksize:
@@ -469,6 +478,7 @@ def chunk_split(datapath, chunksize):
             ny = int(np.ceil(scan_shape[1]/chunksize))
             data = py4DSTEM.io.read( os.path.join(new_dir, 'Diffraction_SI.dm4') )
             data.set_scan_shape(scan_shape[0],scan_shape[1])
+            print('splitting up ', new_dir)
             count = 0
             for i in range(nx):
                 for j in range(ny):
@@ -478,7 +488,8 @@ def chunk_split(datapath, chunksize):
                     uppery = min((j+1)*chunksize, scan_shape[1])
                     splitd[1] = "{}x{}".format(upperx-i*chunksize,uppery-j*chunksize)
                     new_dir = os.path.join(datapath, "_".join(splitd))
-                    os.makedirs(new_dir, exist_ok=True)
+                    os.makedirs(new_dir)
+                    print('making ', new_dir)
                     dat = data.data[i*chunksize:upperx, j*chunksize:uppery, :, :]
                     datcubetmp = py4DSTEM.io.datastructure.datacube.DataCube(dat)
                     py4DSTEM.io.save(os.path.join(new_dir, 'dp.h5'), datcubetmp,overwrite=True)
