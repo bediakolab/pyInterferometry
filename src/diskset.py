@@ -92,6 +92,7 @@ def integrate_disks(datacube, diskset, sub=False, background_fit=None, radius_fa
 
 def integrate_disks_from_mask(datacube, diskset, mask, isLazy=False):
     nregions = np.max(mask.flatten())+1 
+    print('there are {} regions found in the mask'.format(nregions))
     for n in range(0, nregions):
         region_mask = (mask == n)
         qxvals, qyvals = np.where(region_mask == 1)
@@ -100,7 +101,7 @@ def integrate_disks_from_mask(datacube, diskset, mask, isLazy=False):
         if isLazy:
             # datacube is massive object, just load small portion that I need if hyperspy lazyload
             print('loading in revevant chunk from lazy hyperspy import of data')
-            data_chunk = datacube[:,:,qxmin:qxmax, qymin:qymax].compute()
+            data_chunk = datacube.data[:,:,qxmin:qxmax, qymin:qymax].compute()
         else:
             data_chunk = datacube[:,:,qxmin:qxmax, qymin:qymax]
         vdf = np.sum(data_chunk*region_mask_chunk, axis=(2,3))/np.sum(region_mask_chunk) 
@@ -239,11 +240,19 @@ class DiskSet:
             self._xvec[n] = qx_scale * self._xvec[n]
             self._yvec[n] = qy_scale * self._yvec[n]
 
+    def reset_useflags(self):
+        self._in_use *= 0 
+        self.size_in_use = 0
+
     # sets a given bragg disk as active or inactive
     # usage: to 'activate' disk 3, diskset.set_useflag(3, True)
     def set_useflag(self, n, useflag):
+        olduse = self._in_use[n]
         self._in_use[n] = useflag
-        self.size_in_use += 1
+        if useflag and (not olduse):
+            self.size_in_use += 1
+        if (not useflag) and (olduse):
+            self.size_in_use -= 1
 
     # internal function to resizes the container class corresponding to a
     # change in the total number of bragg disks
@@ -659,15 +668,15 @@ def get_masked_diskset(scan_shape, mask):
     nx, ny = scan_shape[0], scan_shape[1]
     masked_ds = DiskSet(nregions, nx, ny)
     for i in range(nregions):
-        region_mask = (mask == n)
+        region_mask = (mask == i)
         qxvals, qyvals = np.where(region_mask == 1)
         meanqx, meanqy = np.mean(qxvals), np.mean(qyvals)
         # qx and qy rough locations of each masked disk used to figure out corresponding gvecs
         # need not be exact since algorithm knows expected gvecs - just to ascribe each vdf to one
-        diskset.set_x(i,meanqx)
-        diskset.set_y(i,meanqy)
-        diskset.set_useflag(i,True) # all disk objects active for the masked approach
-    return diskset
+        masked_ds.set_x(i,meanqx)
+        masked_ds.set_y(i,meanqy)
+        masked_ds.set_useflag(i,True) # all disk objects active for the masked approach
+    return masked_ds
 
 def select_disks(diskset, dp, disks_to_use=None):
     use_log = boolquery('use a log plot?')
