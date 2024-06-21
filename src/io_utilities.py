@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import pickle
 import pandas as pd
 import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from globals import default_parameters, default_parameter_filler, known_materials, data_quality_flags, fit_quality_flags, partition_quality_flags
 from heterostrain import extract_twist_hetstrain, plot_twist_hetstrain, plotTris, matrixFromTriangleQuantity
 from unwrap_utils import getAdjacencyMatrixManual, rotate_uvecs
@@ -365,7 +366,7 @@ class DataSetContainer:
         self.rotsanitypath    = os.path.join(self.plotpath, "sanity_gvector_rotation_check.png")
         self.localsubplot     = os.path.join(self.plotpath, "sanity_local_substraction.png")
         self.sanity_intfit    = os.path.join(self.plotpath, "sanity_vdf_check2.png")
-        self.sanity_vdf       = os.path.join(self.plotpath, "sanity_vdf_check.png")
+        self.sanity_vdf       = os.path.join(self.plotpath, "sanity_vdf_check.svg")
         self.sanity_axes      = os.path.join(self.plotpath, "sanity_axes.png")
         self.disp_orrientation_sanity =    os.path.join(self.plotpath, "sanity_disp_orrientation.png")
         self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
@@ -522,8 +523,7 @@ class DataSetContainer:
                 for i in range(len(probes)): print('{}:    {}'.format(i, probes[i]))
                 indx = int(input("Which Probe File to Use? ---> ").lower().strip())
             self.update_parameter("ProbeUsed", probes[indx], "extract_probe")
-            print(probes[indx])
-            print(self.parameter_dict["ProbeUsed"])
+            return get_probe(probes[indx])
         return get_probe(self.parameter_dict["ProbeUsed"])
 
     def extract_masked_diskset(self):
@@ -555,6 +555,31 @@ class DataSetContainer:
         if not showflag: plt.close()
         if showflag: plt.show()
 
+    def select_vdf_masked_diskset(self):
+        self.extract_masked_diskset()
+        diskset = self.masked_diskset
+        nx, ny = int(np.ceil(diskset.size ** 0.5)), int(np.ceil(diskset.size ** 0.5))
+        f, axes = plt.subplots(nx, ny)
+        axes = axes.flatten()
+        gvecs = diskset.clean_normgset()
+        for n in range(diskset.size):
+            img = diskset.df(n)
+            axes[n].imshow(img, cmap='gray')
+            axes[n].set_title("Disk {}".format(n))
+        for n in range(diskset.size, len(axes)): axes[n].axis("off")
+        plt.subplots_adjust(hspace=0.55, wspace=0.3)
+        plt.show()
+        while True:
+            try:
+                use_indx = [int(el.strip()) for el in input("which vdfs to use? enter indices separated by commas").split(',')]
+                break
+            except:
+                print('uh try again parse error')
+        diskset.reset_useflags()
+        for n in use_indx: diskset.set_useflag(n, True)
+        print(use_indx)
+        self.update_masked_diskset(diskset)
+    
     def make_vdf_plots(self, showflag=False, masked=False):
 
         if (not masked):
@@ -564,12 +589,12 @@ class DataSetContainer:
             pltpath2 = self.vdfplotpath
             Ndiskparam = "NumberDisksUsed"
         if (masked):
-            self.exract_masked_diskset()
+            self.extract_masked_diskset()
             diskset = self.masked_diskset
             pltpath1 = self.maskeddiskplotpath
             pltpath2 = self.maskedvdfplotpath
             Ndiskparam = "NumberDisksUsed_Masked"
-
+            
         counter = 0
         tot_img = np.zeros((diskset.nx, diskset.ny))
         self.update_parameter(Ndiskparam, diskset.size_in_use, "make_vdf_plots")
@@ -582,14 +607,15 @@ class DataSetContainer:
                 img = diskset.df(n)
                 tot_img = tot_img + img
                 axes[counter].imshow(img, cmap='gray')
-                axes[counter].set_title("Disk {}{}".format(gvecs[counter][0],gvecs[counter][1]))
+                axes[counter].set_title("Disk {}".format(counter))
+                #axes[counter].set_title("Disk {}{}".format(gvecs[counter][0],gvecs[counter][1]))
                 counter += 1
-        for n in range(counter, len(axes)):
-            axes[n].axis("off")
+        for n in range(counter, len(axes)): axes[n].axis("off")
         tot_img = normalize(tot_img)
         plt.subplots_adjust(hspace=0.55, wspace=0.3)
-        if not showflag: plt.savefig(pltpath1, dpi=300)
-        if not showflag: plt.close()
+        if not showflag: 
+            plt.savefig(pltpath1, dpi=300)
+            plt.close()
         if showflag: plt.show()
 
         # saves sum of all disk vdfs
@@ -600,9 +626,10 @@ class DataSetContainer:
         ax.set_xticks(np.arange(0, np.round(diskset.nx/50)*50+1, 50))
         ax.set_yticks(np.arange(0, np.round(diskset.ny/50)*50+1, 50))
         for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(2)
-        print("saving vdf plot to {}".format(pltpath2))
-        if not showflag: plt.savefig(pltpath2, dpi=300)
-        if not showflag: plt.close()
+        if not showflag: 
+            plt.savefig(pltpath2, dpi=300)
+            print("saving vdf plot to {}".format(pltpath2))
+            plt.close()
         if showflag: plt.show()
         if False:
             f, ax = plt.subplots(4,3)
@@ -855,6 +882,7 @@ class DataSetContainer:
 
         diskset = self.diskset
         I = diskset.df_set()
+        #I = I[:, :100, :100]
         if self.u_wrapped is None: self.extract_displacement_fit()
 
         g1  = np.array([ 0, 2/np.sqrt(3)])
@@ -863,85 +891,67 @@ class DataSetContainer:
         dfsA = []
         dfsB = []
         g   = diskset.clean_normgset(sanity_plot = False)
+        ringnos = diskset.determine_rings()
 
         for n in range(len(g)): I[n,:,:] = normalize(I[n,:,:])
 
-        AB_ratio = []
-        for n in range(len(g)):
-            df_tot   = np.zeros((self.u_wrapped.shape[0], self.u_wrapped.shape[1]))
-            df_Aonly = np.zeros((self.u_wrapped.shape[0], self.u_wrapped.shape[1]))
-            df_Bonly = np.zeros((self.u_wrapped.shape[0], self.u_wrapped.shape[1]))
-            for i in range(self.u_wrapped.shape[0]):
-                for j in range(self.u_wrapped.shape[1]):
+        I_fit = np.zeros((I.shape[0], I.shape[1], I.shape[2]))
+
+        for n in range(I.shape[0]):
+            for i in range(I.shape[1]):
+                for j in range(I.shape[2]):
                     gvec = g[n][1] * g1 + g[n][0] * g2
                     u    = [self.u_wrapped_raw[i,j,0], self.u_wrapped_raw[i,j,1]]
-                    df_tot[i,j]   = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
-                    df_tot[i,j]  += B[n] * (np.cos(np.pi * np.dot(gvec, u)))*(np.sin(np.pi * np.dot(gvec, u)))
-                    df_tot[i,j]  += C[n] 
-            dfs.append(df_tot)
-            AB_ratio.append(np.abs(B[n]/A[n]) * 100)
-        for n in range(len(g)): 
-            nx, ny = dfs[n].shape
-            normdf = normalize(dfs[n].flatten())
-            dfs[n] = normdf.reshape(nx, ny)
+                    I_fit[n,i,j]   = A[n] * (np.cos(np.pi * np.dot(gvec, u)))**2
+                    I_fit[n,i,j]  += B[n] * (np.cos(np.pi * np.dot(gvec, u)))*(np.sin(np.pi * np.dot(gvec, u)))
+                    I_fit[n,i,j]  += C[n]     
 
-        if False:
-            fig, axes = plt.subplots(3,3)
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            for n in range(3):
-                im = axes[n,0].imshow(dfs[n],   cmap='gray')#, vmin=0., vmax=1.)
-                divider = make_axes_locatable(axes[n,0])
-                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
-                im = axes[n,1].imshow(I[n,:,:], cmap='gray')#, vmin=0., vmax=1.)
-                divider = make_axes_locatable(axes[n,1])
-                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
-                im = axes[n,2].imshow(I[n,:,:] - dfs[n], cmap='gray')
-                divider = make_axes_locatable(axes[n,2])
-                fig.colorbar(im, cax=divider.append_axes('right', size='5%', pad=0.05), orientation='vertical')
-            plt.show()
-            #exit()
+        resid = I - I_fit    
         
-        print("mean unsigned B/A is ", np.mean(AB_ratio), " percent")
-        f, axes = plt.subplots(6,6)
+        f, axes = plt.subplots(2,2)
+        ax = axes.flatten()
 
-        resid_all_disks = []
+        sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
+        img = displacement_colorplot(ax[0], self.u_wrapped, sample_angle=sample_angle, quiverbool=False)
 
-        for n in range(6):
-            axes[n,0].imshow(dfs[n],   cmap='gray', vmin=0., vmax=1.)
-            axes[n,1].imshow(I[n,:,:], cmap='gray', vmin=0., vmax=1.)
-            #axes[n,2].imshow(dfsA[n], vmin=-1., vmax=1.)
-            #axes[n,3].imshow(dfsB[n], vmin=-1., vmax=1.)
-            axes[n,2].imshow(I[n,:,:] - dfs[n], cmap='gray')
-            resid_all_disks.extend( ((I[n,:,:] - dfs[n])).flatten() )
-            axes[n,0].set_title('fit {}-{}{}'.format(n, g[n][1], g[n][0])); 
-            axes[n,1].set_title('raw {}-{}{}'.format(n, g[n][1], g[n][0])); 
-            #axes[n,2].set_title('cos2'); 
-            #axes[n,3].set_title('sincos'); 
-            axes[n,2].set_title('resid'); 
-        for n in range(6):
-            try:
-                axes[n,3].set_title('fit {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-                axes[n,4].set_title('raw {}-{}{}'.format(6+n, g[6+n][1], g[6+n][0])); 
-                #axes[n,5+2].set_title('cos2'); 
-                #axes[n,5+3].set_title('sincos'); 
-                axes[n,5].set_title('resid'); 
-                axes[n,3].imshow(dfs[6+n], cmap='gray', vmin=0., vmax=1.)
-                axes[n,4].imshow(I[6+n,:,:], cmap='gray', vmin=0., vmax=1.)
-                #axes[n,5+2].imshow(dfsA[6+n], vmin=-1., vmax=1.)
-                #axes[n,5+3].imshow(dfsB[6+n], vmin=-1., vmax=1.)
-                axes[n,5].imshow(I[6+n,:,:] - dfs[6+n], cmap='gray')
-                resid_all_disks.extend( ((I[n+6,:,:] - dfs[n+6])).flatten() )
-            except:
-                continue
+        ring1 = np.zeros((I.shape[1], I.shape[2]))
+        ring2 = np.zeros((I.shape[1], I.shape[2]))
+        ring1f = np.zeros((I.shape[1], I.shape[2]))
+        ring2f = np.zeros((I.shape[1], I.shape[2]))
+        rms = np.zeros((I.shape[1], I.shape[2]))
+        for n in range(I.shape[0]):
+            img = I[n,:,:]
+            imgf = I_fit[n,:,:]
+            ringno = ringnos[n]
+            if ringno == 1: 
+                ring1 += img
+                ring1f += imgf;
+            elif ringno == 2: 
+                ring2 += img;
+                ring2f += imgf;
 
-        print("mean residual in intensity is ", np.mean(resid_all_disks)) 
-        print("std  residual in intensity is ",  np.std(resid_all_disks)) 
-        self.update_parameter("FitMeanResidual", np.mean(resid_all_disks) , "main")
-        self.update_parameter("FitSTDResidual", np.std(resid_all_disks),    "main")
+        for i in range(I.shape[1]):
+            for j in range(I.shape[2]):
+                rms[i,j] = np.sqrt(np.mean([el**2 for el in resid[:,i,j]]))
+
+        img = ax[1].imshow(rms, cmap='plasma')
+        div = make_axes_locatable(ax[1])
+        cax = div.append_axes('right', size='5%',pad=0.05)
+        f.colorbar(img, cax=cax, orientation='vertical')
+        ax[2].imshow(make_coloredvdf(ring1, ring2, gaussian_sigma=None))
+        ax[2].axis("off")
+        ax[3].imshow(make_coloredvdf(ring1f, ring2f, gaussian_sigma=None))
+        ax[3].axis("off")
+            
         plt.savefig(self.sanity_vdf, dpi=300)
-        #plt.show()
         plt.close('all')
- 
+
+        print("mean rms[i,j] in intensity is ",  np.mean(rms.flatten())) 
+        print("std  rms[i,j] in intensity is ",  np.std(rms.flatten())) 
+        self.update_parameter("FitMeanResidual", np.mean(rms.flatten()) , "main")
+        self.update_parameter("FitSTDResidual", np.std(rms.flatten()),    "main")
+
+
     def make_displacement_plot(self, showflag=False, rewrite=False):
 
         if False:
@@ -1421,8 +1431,13 @@ class DataSetContainer:
     def update_displacement_fit(self, coefs, fit):
         print('updating displacements for {}'.format(self.name))
         self.u_wrapped = fit
-        with open(self.fitpath, 'wb') as f: 
-            pickle.dump([self.diskset, coefs[:,0], coefs[:,1], coefs[:,2], fit], f)
+        nc = (coefs.shape[1])
+        if nc == 3:
+            with open(self.fitpath, 'wb') as f: 
+                pickle.dump([self.diskset, coefs[:,0], coefs[:,1], coefs[:,2], fit], f)
+        elif nc == 2:
+            with open(self.fitpath, 'wb') as f: 
+                pickle.dump([self.diskset, coefs[:,0], coefs[:,1], fit], f)
 
     def update_bindisplacement_fit(self, coefs, fit):
         print('updating binned displacements for {}'.format(self.name))
@@ -1474,7 +1489,7 @@ class DataSetContainer:
         writedict(self.parampath, self.param_dictionary, self.parameter_dict_comments)
         return newvalue
 
-    def extract_raw(self, use_hyperspy=True):
+    def extract_raw(self, use_hyperspy=False):
         scan_shape0 = int(self.extract_parameter("ScanShapeX", force_set=True, param_type=float))
         scan_shape1 = int(self.extract_parameter("ScanShapeY", force_set=True, param_type=float))
         if not self.check_has_raw():
