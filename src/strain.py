@@ -327,13 +327,6 @@ def strain(u, sample_angle=0, smoothfunc=(lambda u: u), ax=None, plotbool=False,
     eyx = cor_duy_dx # dx uy
     eyy = cor_duy_dy # dy uy
 
-    #f,ax = plt.subplots(2,2)
-    #ax[0,0].imshow(exx)
-    #ax[0,1].imshow(exy)
-    #ax[1,0].imshow(eyx)
-    #ax[1,1].imshow(eyy)
-    #plt.show()
-
     # u provided is in units of pixels, dx grid in pixels, first derivative unitless
     e_off = 0.5 * (exy + eyx) # this was g_xy in previous code, symmetrized off-diag (dxuy + dyux)/2
 
@@ -368,6 +361,28 @@ def strain(u, sample_angle=0, smoothfunc=(lambda u: u), ax=None, plotbool=False,
         ax[2].imshow(exy, origin='lower')
         ax[3].imshow(eyx, origin='lower')
         ax[4].imshow(eyy, origin='lower')
+
+    """
+    f,ax = plt.subplots(3,3)
+    ax = ax.flatten()
+    nx, ny = exx.shape[0], exx.shape[1]
+    im = ax[0].imshow(exx[5:nx-5, 5:ny-5],origin='lower', cmap='RdBu_r', vmin=-0.03, vmax=0.03)
+    f.colorbar(im, cax=make_axes_locatable(ax[0]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[1].imshow(exy[5:nx-5, 5:ny-5],origin='lower', cmap='RdBu_r', vmin=-0.03, vmax=0.03)
+    f.colorbar(im, cax=make_axes_locatable(ax[1]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[2].imshow(eyx[5:nx-5, 5:ny-5],origin='lower', cmap='RdBu_r', vmin=-0.03, vmax=0.03)
+    f.colorbar(im, cax=make_axes_locatable(ax[2]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[3].imshow(eyy[5:nx-5, 5:ny-5],origin='lower', cmap='RdBu_r', vmin=-0.03, vmax=0.03)
+    f.colorbar(im, cax=make_axes_locatable(ax[3]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[4].imshow(gamma[5:nx-5, 5:ny-5],origin='lower', cmap='plasma', vmin=0.0, vmax=0.025)
+    f.colorbar(im, cax=make_axes_locatable(ax[4]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[5].imshow(theta_t[5:nx-5, 5:ny-5],origin='lower', cmap='RdBu')
+    f.colorbar(im, cax=make_axes_locatable(ax[5]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    im= ax[6].imshow(dil[5:nx-5, 5:ny-5],origin='lower', cmap='PuOr_r', vmin=-0.02, vmax=0.02)
+    f.colorbar(im, cax=make_axes_locatable(ax[6]).append_axes('right', size='5%', pad=0.05), orientation='vertical')
+    plt.show()
+    """
+
     return exx, exy, eyx, eyy, gamma, theta_p, theta_t, dil
 
 def rotate_strain(ux, uy, ang):

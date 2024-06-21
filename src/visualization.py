@@ -112,6 +112,7 @@ def displacement_colorplot_ttlg(ax, Ux, Uy, inc3layer, abt_offset, f):
     colors1 = plot_hexagon(ax, nx, ny, colors1, radius=1/(2*f), orientation=0) 
     for axis in ['top','bottom','left','right']: ax.spines[axis].set_linewidth(1)
 
+
 def colored_quiver(ax, u_x, u_y, sample_angle=0):
     colors = displacement_colorplot(None, u_x, u_y)
     uxrot = np.cos(sample_angle) * u_x - np.sin(sample_angle) * u_y
@@ -158,6 +159,10 @@ def plot_adjacency(img, centers, adjacency_type, ax=None, colored=True):
             elif adjacency_type[i, j] == 3:
                 if colored: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="y")
                 else: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="grey", linewidth=0.5)
+            elif adjacency_type[i, j] == 4:
+                if colored: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="k")
+                else: ax.plot([centers[i][1], centers[j][1]], [centers[i][0], centers[j][0]], color="k", linewidth=0.5)
+
 
 def new_rgb_to_hsv(r, g, b):
  
@@ -317,7 +322,7 @@ def displacement_colorplot_exp(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_boo
             ax.quiver(uxrot, uyrot)
     return colors1
 
-def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True, debugplot=False):
+def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=False, quiverbool=True, debugplot=False, quivert=False):
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] # different way of entering U as a nx,ny,2 object
     nx, ny = Ux.shape
     g1 = np.array([ 0, 2/np.sqrt(3)])
@@ -341,9 +346,9 @@ def displacement_colorplot(ax, Ux, Uy=None, sample_angle=0, plot_hexagon_bool=Fa
         if not plot_hexagon_bool and quiverbool: 
             uxrot = np.cos(sample_angle) * Ux - np.sin(sample_angle) * Uy
             uyrot = np.cos(sample_angle) * Uy + np.sin(sample_angle) * Ux
-            ax.quiver(uxrot, uyrot)
+            if quivert: ax.quiver(uyrot, uxrot)
+            else: ax.quiver(uxrot, uyrot)
     return colors1
-
 
 def displacement_bivariate2ring(ax, Ux, Uy=None, plot_hexagon_bool=True):
     if Uy is None: Ux, Uy = Ux[:,:,0], Ux[:,:,1] 
@@ -944,6 +949,7 @@ if __name__ == "__main__":
         #make_examplefig_categorized(ax[0])
         f, ax = plt.subplots()
         make_legend_bivariate_ttlg(ax)
+        #make_legend(ax, plotflag=False, debugplot=True)
         plt.show()
         #plt.savefig("/Users/isaaccraig/Desktop/hex.png", dpi=500)
         exit()

@@ -1,7 +1,7 @@
 
 import gc
 import os
-usep4dstem = True
+usep4dstem = False
 if usep4dstem:
     import py4DSTEM
     if py4DSTEM.__version__ != '0.11.5':
@@ -137,15 +137,20 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
         exit()
 
     while True:
-        methodid = input("Method? \n1: voronoi (good for large twist data, P or AP) \n2: watershed (good for most AP data unless very large twist)\n").lower().strip()[0] 
+        methodid = input("Method? \n1: voronoi AA \n2: watershed AA \n3: watershed AB \n").lower().strip()[0] 
         if int(methodid) == 1: 
             voronibool, tribool = True, False
-            ds.update_parameter("UnwrapMethod", "Voronoi", "unwrap_main")
+            ds.update_parameter("UnwrapMethod", "Voronoi AA", "unwrap_main")
             break
         elif int(methodid) == 2: 
             voronibool, tribool = False, False
             print('using watershed')
-            ds.update_parameter("UnwrapMethod", "Watershed", "unwrap_main")
+            ds.update_parameter("UnwrapMethod", "Watershed AA", "unwrap_main")
+            break
+        elif int(methodid) == 3: 
+            voronibool, tribool = False, True
+            print('using watershed AB')
+            ds.update_parameter("UnwrapMethod", "Watershed AB", "unwrap_main")
             break
         else:
             print('unrecognized/unimplemented method please try again'.format(methodid))
@@ -219,12 +224,17 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
                 for d in range(uorig.shape[2]):
                     u[i,j,d] = uorig[j,i,d]
 
-    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=True)
+    centers, adjacency_type = getAdjacencyMatrix(u, boundary_val, delta_val, combine_crit, spdist, refine=(not tribool))
     points = [ [c[1], c[0]] for c in centers ]
     u, ang, adjacency_type = automatic_sp_rotation(u, centers, adjacency_type, transpose=True) 
 
-    if not tribool: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap(centers, adjacency_type, u, voronibool, plotting=True) 
-    else: u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap_tri(centers, adjacency_type, u) 
+    if not tribool: 
+        print('using aa methods')
+        u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap(centers, adjacency_type, u, voronibool, plotting=True) 
+    else: 
+        print('using ab methods')
+        u_signalign, u_unwrapped, u_adjusts, nmcenters, regions, vertices = geometric_unwrap_tri(centers, adjacency_type, u, voronibool=voronibool) 
+
     dists = normDistToNearestCenter(u.shape[0], u.shape[1], centers)
     variable_region = (dists > centerdist).astype(int)
     u = strain_method_3(u_unwrapped, points, variable_region)
@@ -299,7 +309,7 @@ class DataSetContainer:
 
         self.theta_colormap = 'RdBu_r'
         self.dilation_colormap = 'PuOr_r'
-        self.gamma_colormap = 'PiYG_r' #'gamma'
+        self.gamma_colormap = 'plasma' #'gamma'
         self.piezo_colormap = 'RdBu_r'
         self.counter_colormap = 'viridis'
         self.localsubtractcheck_colormap = 'RdBu_r'
@@ -349,8 +359,8 @@ class DataSetContainer:
         self.piezoplotpath    = os.path.join(self.plotpath, "piezo_charge.png")
         self.piezoquiverpath  = os.path.join(self.plotpath, "piezo_polarization.png")
         self.piezohexplotpath = os.path.join(self.plotpath, "hex_piezocharge.png")
-        self.subcroprotpath   = os.path.join(self.plotpath, "rotation_cropped_sub.png")
-        self.subcropdilpath   = os.path.join(self.plotpath, "dilation_cropped_sub.png")
+        self.subcroprotpath   = os.path.join(self.plotpath, "rotation_cropped_sub.svg")
+        self.subcropdilpath   = os.path.join(self.plotpath, "dilation_cropped_sub.svg")
         self.subcropgammapath = os.path.join(self.plotpath, "shear_cropped_sub.png")
 
         self.dillinecutpath   = os.path.join(self.plotpath, "dil_linecut.png")
@@ -946,11 +956,6 @@ class DataSetContainer:
         plt.savefig(self.sanity_vdf, dpi=300)
         plt.close('all')
 
-        print("mean rms[i,j] in intensity is ",  np.mean(rms.flatten())) 
-        print("std  rms[i,j] in intensity is ",  np.std(rms.flatten())) 
-        self.update_parameter("FitMeanResidual", np.mean(rms.flatten()) , "main")
-        self.update_parameter("FitSTDResidual", np.std(rms.flatten()),    "main")
-
 
     def make_displacement_plot(self, showflag=False, rewrite=False):
 
@@ -1048,6 +1053,12 @@ class DataSetContainer:
         if smoothbool: smoothed_u = smooth(self.u_unwrap, sigma)
         else: smoothed_u = self.u_unwrap
         smooth_scale_u = smoothed_u * a/ss
+        #f, ax = plt.subplots(1,3)
+        #img = displacement_colorplot(ax[0], self.u_unwrap) 
+        #img = displacement_colorplot(ax[1], smooth(self.u_unwrap, sigma)) 
+        #img = displacement_colorplot(ax[2], smooth(self.u_unwrap, sigma) * a/ss) 
+        #plt.show()
+        #exit()
         _, _, _, _, gamma, thetap, theta, dil = strain(smooth_scale_u, sample_angle)
         return smoothed_u, smooth_scale_u, 100*gamma, theta, 100*dil
 
@@ -1616,6 +1627,7 @@ class DataSetContainer:
             sample_angle = self.extract_parameter("SampleRotation", force_set=True, param_type=float)
             ax[1].imshow(ndimage.rotate(img, -sample_angle, reshape=False), origin='lower') 
             plt.savefig(self.unwrap_orrientation_sanity, dpi=300)
+            print('generating plot ', self.unwrap_orrientation_sanity)
             plt.close('all')
             return self.u_unwrap, self.centers, self.adjacency_type
 
