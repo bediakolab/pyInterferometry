@@ -1,5 +1,6 @@
 
 import matplotlib
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 do_par_fit_but_not_unwrap = False
 if do_par_fit_but_not_unwrap:
     matplotlib.use('Agg') # need this backend when rendering within parallelized loops
@@ -16,7 +17,7 @@ import pickle
 from numpy.linalg import norm
 import numpy.random as random
 from pathos.multiprocessing import Pool # pathos.multiprocessing can serialize wrapper funcs, multiprocessing can't
-from basis_utils import lv_to_rzlv, latticevec_to_cartesian, cartesian_to_latticevec
+from basis_utils import lv_to_rzlv, latticevec_to_cartesian, cartesian_to_latticevec, rz_helper_pair
 import warnings
 
 def verify_dfs(savepath, diskset, coefs, ulv):
@@ -116,7 +117,7 @@ def refit_full_hexagon_from_bin(diskset, coefs, uvecs, g=None):
         toc('u fit')
     return coefs, uvecs_unbin
 
-def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A=None):
+def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A=None, useStagedOpt=True):
 
     # get vector of g corresponding to diffraction pattern intensities 
     # so if I[:,:,i] is the intensity of disk i, which is at a gvector of g_1+g_2 (g_1 and g_2 are conventional hexagonal recip lattice vectors)
@@ -144,11 +145,8 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
             exit()
     else: print('Unrecognized type for intensities given to fit_full_hexagon, needs to be an array or DiskSet instance')
 
-
-    Ibin = np.zeros((I.shape[0], I.shape[1]//binw, I.shape[2]//binw))
-    for i in range(I.shape[0]):
-        Ibin[i,:,:] = bin(I[i,:,:], bin_w=binw, method=np.sum)
-    I = Ibin
+    Inorm = np.zeros((I.shape[0], I.shape[1], I.shape[2]))
+    for disk in range(I.shape[0]): Inorm[disk,:,:] = normalize(I[disk,:,:])
     
     # if ncoefs=3 A,B,C for Acos^2 + Bsincos + C fit
     # if ncoefs=2 A,B   for Acos^2 + B fit
@@ -158,21 +156,71 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
     coefs[:,0] = 1
     tic()
     uvecs, residuals = fit_u(I, coefs, nx, ny, g=g, guess=guess, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
+    
+    ############## making a residual sanity plot #############
+    resid_plot = False
+    if resid_plot:
+        counter = 0
+        f, ax = plt.subplots(4,3)
+        ax = ax.flatten()
+        for i in range(12):
+            im = ax[i].imshow(residuals[:,:,i])
+            div = make_axes_locatable(ax[i])
+            cax = div.append_axes('right', size='5%', pad=0.05)
+            f.colorbar(im, cax=cax, orientation='vertical')
+        RMS = np.sqrt(np.mean([r**2 for r in residuals.flatten()]))
+        ax[0].set_title(RMS)
+        plt.savefig('{}.png'.format(counter))
+        print('{} : RMS '.format(counter), RMS)
+        counter += 1
+    
     toc('ufit')
+
+    if (not useStagedOpt): # serial together fit, is worse. see https://arxiv.org/abs/2406.04515
+        guess = np.concatenate((coefs.flatten(), uvecs.flatten()), axis=0)
+        coefs, uvecs, resid = fit_together_serial(Inorm, g, guess, ncoefs)
+        f, ax = plt.subplots(4,3)
+        ax = ax.flatten()
+        for i in range(12):
+            im = ax[i].imshow(resid[:,:,i])
+            div = make_axes_locatable(ax[i])
+            cax = div.append_axes('right', size='5%', pad=0.05)
+            f.colorbar(im, cax=cax, orientation='vertical')
+        RMS = np.sqrt(np.mean([r**2 for r in resid.flatten()]))
+        ax[0].set_title(RMS)
+        plt.savefig('{}.png'.format(counter))
+        print('{} : RMS '.format(counter), RMS)
+        return coefs, uvecs
 
     # iterative fit
     print('starting iterative u, A, B, C fits')
-    for n in range(2):
+    for n in range(15):
         tic()
         coefs, resid = fit_ABC(I, uvecs, nx, ny, g, coefs, nproc=12, parallel=False, norm_bool=True)
-        uvecs, resid = fit_u(I, coefs, nx, ny, g, guess=uvecs, nproc=12, parallel=True, norm_bool=True, multistart_bool=False)
-        toc('u abc')
 
-    print('starting iterative median u, A, B, C fits')
-    for n in range(10):
-        tic()
-        coefs, resid = fit_ABC(I, uvecs, nx, ny, g, coefs, nproc=12, parallel=False, norm_bool=True)
-        uvecs, residuals = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_neighbor_bool=True)
+        # multistart fit using neighbors
+        uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_neighbor_bool=True)
+       
+        # no multistart
+        #uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_bool=False)
+        
+        # multistart fit using grid
+        #uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
+
+        if resid_plot:
+            f, ax = plt.subplots(4,3)
+            ax = ax.flatten()
+            for i in range(12):
+                im = ax[i].imshow(residuals[:,:,i])
+                div = make_axes_locatable(ax[i])
+                cax = div.append_axes('right', size='5%', pad=0.05)
+                f.colorbar(im, cax=cax, orientation='vertical')
+            RMS = np.sqrt(np.mean([r**2 for r in resid.flatten()]))
+            ax[0].set_title(RMS)
+            plt.savefig('{}.png'.format(counter))
+            print('{} : RMS '.format(counter), RMS)
+            counter += 1
+
         toc('u abc')
 
     return coefs, uvecs
@@ -209,14 +257,14 @@ def multistart(optfunc, costfunc, guesses):
 def fit_u_serial(ndisks, norm_df_set, coefs, nx, ny, g, guess=None, multistart_bool=False, multistart_neighbor_bool=False, delta=0.2):
     print('starting call to ufit serial')
     uvecs = np.zeros((nx, ny, 2))
-    residuals = np.zeros((nx, ny))
+    residuals = np.zeros((nx, ny,ndisks))
     # relies on the function fit_xy which fits an individual pixel, finds a single u from a single I_j = A_j * cos^2(pi g_j dot u) + B_j
     fit_xy_wrap = lambda x,y: fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess, multistart_bool, multistart_neighbor_bool, delta)
     # loop over each pixel and use the fit_xy function on each
     for x in range(nx):
         print("{}% done...".format(100*x/nx))
         for y in range(ny):
-            uvecs[x, y, :], residuals[x, y] = fit_xy_wrap(x, y)
+            uvecs[x, y, :], residuals[x, y,:] = fit_xy_wrap(x, y)
     return uvecs, residuals
 
 ####################################################################################################
@@ -237,7 +285,7 @@ def fit_u_parallel(ndisks, norm_df_set, coefs, nx, ny, g, nproc=4, guess=None, m
     uvec_slice =  [outputel[0] for outputel in output]
     resid_slice = [outputel[1] for outputel in output]
     uvecs = np.array(uvec_slice).reshape(nx,ny,2)
-    residuals = np.array(resid_slice).reshape(nx,ny)
+    residuals = np.array(resid_slice).reshape(nx,ny,ndisks)
     return uvecs, residuals
 
 ####################################################################################################
@@ -375,7 +423,6 @@ def fit_xynew(ndisks, I, coefs, x, y, g, guess=None, neighbor=False, asym=False)
     residuals = np.sum(np.abs(residuals))
     return opt_params, residuals
 
-
 def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_bool=False, multistart_neighbor_bool=False, delta=0.2):
     val_vec = norm_df_set[:,x,y].flatten() # get the intensity values
     # this is the function we want to fit to
@@ -410,7 +457,9 @@ def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_b
             guess_val = guess[x,y,:]
             guesses = [ guess_val + [0, delta], guess_val + [delta, 0], guess_val + [0, -delta], guess_val + [-delta,0],
                         guess_val + [delta, delta], guess_val + [delta, -delta], guess_val + [-delta, delta] ]
-            for i in range(len(guesses)): guesses[i,:] = rz_helper_pair(guesses[i,0], guesses[i,1], sign_wrap=False)
+            for i in range(len(guesses)): 
+                temp = rz_helper_pair(guesses[i][0], guesses[i][1], sign_wrap=False)
+                guesses[i] = temp
         opt_params, opt_residuals = multistart(optfunc, _costfunc, guesses)
     elif multistart_neighbor_bool:
           if guess is None: print('for neighbor fit need guess vector pls')
@@ -426,8 +475,57 @@ def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_b
         opt_params = opt.x
         opt_residuals = _costfunc(opt.x)
     uvecs = opt_params
-    residuals = np.sum(np.abs(opt_residuals))
+    residuals = opt_residuals
     return uvecs, residuals
+
+def fit_together_serial(df_set, g, guess = None, ncoefs= 2):
+
+    ndisks = df_set.shape[0]
+    nx = df_set.shape[1]
+    ny = df_set.shape[2]
+    norm_df_set = np.zeros((ndisks, nx, ny))
+    for disk in range(ndisks):
+        norm_df_set[disk,:,:] = normalize(df_set[disk,:,:])
+   
+    # this is the function we want to fit to
+    def _fit_func(coefs, u):
+        vals = np.zeros((ndisks, nx, ny))
+        for i in range(nx):
+            for j in range(ny):
+                for disk in range(ndisks):
+                    if ncoefs == 3:
+                        vals[disk, i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(g[disk],u[i,j,:]) ) ** 2 + coefs[disk,2]
+                        vals[disk, i,j] += coefs[disk,1] * np.cos( np.pi * np.dot(g[disk],u[i,j,:]) ) * np.sin( np.pi * np.dot(g[disk],u[i,j,:]) )
+                    elif ncoefs == 2:
+                        vals[disk, i,j] =  coefs[disk,0] * np.cos( np.pi * np.dot(g[disk],u[i,j,:]) ) ** 2 + coefs[disk,1]
+        return vals
+
+    # returns the resiudals
+    def _costfunc(vec): 
+        coefs = vec[:ndisks*ncoefs].reshape(ndisks, ncoefs)
+        u = vec[ndisks*ncoefs:].reshape(nx, ny, 2)
+        return (df_set - _fit_func(coefs, u)).flatten()
+
+    lowerbounds = np.concatenate( (-1 * np.ones(ncoefs*ndisks), -0.50 * np.ones(2*nx*ny)), axis = 0 )
+    upperbounds = np.concatenate( (1 * np.ones(ncoefs*ndisks),  0.50 * np.ones(2*nx*ny)), axis = 0 )
+    
+    #coefguess = np.zeros((ndisks, 3))
+    #coefguess[:,0] = 1
+    #guess_params = np.concatenate( (coefguess.flatten(), 0.0 * np.ones(2*nx*ny)), axis = 0 )
+
+    guess_params = guess
+    start_resid = _costfunc(guess_params)
+    print('start RMS of ', np.sqrt(np.mean([r**2 for r in start_resid.flatten()])))
+
+    bounds = (lowerbounds, upperbounds)
+    opt = least_squares(_costfunc, guess_params, bounds=bounds, verbose=2, ftol=None, xtol=1e-3, gtol=None)
+    opt_params = opt.x
+    opt_residuals = _costfunc(opt.x)
+
+    coefs = opt_params[:ndisks*ncoefs].reshape(ndisks, ncoefs)
+    uvecs = opt_params[ndisks*ncoefs:].reshape(nx, ny, 2)
+    residuals = opt_residuals.reshape(nx, ny, ndisks)
+    return coefs, uvecs, residuals
 
 ####################################################################################################
 # fit A_j and B_j s.t. I_j(x,y) = A_j * cos^2(pi g_j dot u(x,y)) + B_j
