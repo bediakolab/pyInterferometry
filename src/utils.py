@@ -210,12 +210,22 @@ def getAdjacencyMatrixManual(img, points=None, adjacency_matrix=None):
     adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=3, title='click to def SP3 (y)')
     return points, adjacency_matrix 
 
+def getAdjacencyMatrixManualAB(img, points=None, adjacency_matrix=None):
+    if points is not None: points, adjacency_matrix = manual_remove_AA(img, points, adjacency_matrix)
+    points, adjacency_matrix = manual_define_AA(img, points, adjacency_matrix)
+    adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=0, title='click to remove SP')
+    adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=4, title='click to def centers of diff type (AB or BA) in same unit cell')
+    adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=1, title='click to def SP1 (c) between centers of same type (AB or BA)')
+    adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=2, title='click to def SP2 (m) between centers of same type (AB or BA)')
+    adjacency_matrix = manual_define_SP(img, points, adjacency_matrix, adj_type=3, title='click to def SP3 (y) between centers of same type (AB or BA)')
+    return points, adjacency_matrix 
+
 def manual_define_SP(img, points, adjacency_matrix, adj_type, title):
 
     plt.close('all')
     fig, ax = plt.subplots()
     ax.set_title(title)
-    colors = ['k','c', 'm', 'y']
+    colors = ['k','c', 'm', 'y','k']
     adj_color = colors[adj_type]
     lastpoint_queue = []
 
@@ -253,6 +263,33 @@ def manual_define_SP(img, points, adjacency_matrix, adj_type, title):
     print('finished with manual sp{} definition'.format(adj_type))
     return adjacency_matrix
 
+# Returns true if the line segment 'p1q1' and 'p2q2' intersect. 
+# source: https://www.geeksforgeeks.org/check-if-two-given-line-segments-intersect/
+def doIntersect(p1,q1,p2,q2): 
+    def onSegment(p, q, r): 
+        if ( (q[0] <= max(p[0], r[0])) and (q[0] >= min(p[0], r[0])) and (q[1] <= max(p[1], r[1])) and (q[1] >= min(p[1], r[1]))): return True
+        return False
+    def orientation(p, q, r): # 0 : Collinear points, 1 : Clockwise points, 2 : Counterclockwise      
+        val = (float(q[1] - p[1]) * (r[0] - q[0])) - (float(q[0] - p[0]) * (r[1]- q[1])) 
+        if (val > 0):  return 1
+        elif (val < 0): return 2
+        else: return 0
+    o1 = orientation(p1, q1, p2) 
+    o2 = orientation(p1, q1, q2) 
+    o3 = orientation(p2, q2, p1) 
+    o4 = orientation(p2, q2, q1) 
+    if ((o1 != o2) and (o3 != o4)): return True
+    # p1 , q1 and p2 are collinear and p2 lies on segment p1q1 
+    if ((o1 == 0) and onSegment(p1, p2, q1)): return True
+    # p1 , q1 and q2 are collinear and q2 lies on segment p1q1 
+    if ((o2 == 0) and onSegment(p1, q2, q1)): return True
+    # p2 , q2 and p1 are collinear and p1 lies on segment p2q2 
+    if ((o3 == 0) and onSegment(p2, p1, q2)): return True
+    # p2 , q2 and q1 are collinear and q1 lies on segment p2q2 
+    if ((o4 == 0) and onSegment(p2, q1, q2)): return True
+    # If none of the cases 
+    return False
+
 # for manual defined cropping
 def manual_adjust_points(img, regions, points):
     plt.close('all')
@@ -285,11 +322,12 @@ def manual_adjust_points(img, regions, points):
 
 # for manual defined cropping
 def manual_remove_AA(img, points, adj_mat):
+
     plt.close('all')
 
     fig, ax = plt.subplots()
     ax.set_title('click to remove centers - DONT DO IF WATERSHED')
-    adjcolors = ['c', 'm', 'y']
+    adjcolors = ['c', 'm', 'y', 'k']
 
     def getclosestpoint(x,y):
         dists = [(p[0]-x)**2 + (p[1]-y)**2 for p in points]
@@ -365,7 +403,7 @@ def manual_define_AA(img, points=None, adj_mat=None):
     plt.close('all')
     fig, ax = plt.subplots()
     ax.set_title('click to define new centers - DONT DO IF WATERSHED')
-    adjcolors = ['c', 'm', 'y']
+    adjcolors = ['c', 'm', 'y', 'k']
     if points is None: points = []
     def aa_click_event(click):
         x,y = click.xdata, click.ydata
@@ -389,10 +427,15 @@ def manual_define_AA(img, points=None, adj_mat=None):
     return points, adjacency_matrix
 
 # for manual defined cropping
-def manual_define_points(img):
+def manual_define_points(img, otherpts=None):
     plt.close('all')
     fig, ax = plt.subplots()
-    points = []
+    if otherpts is None:
+        points = []
+    else:
+        points = otherpts
+        for pt in otherpts:
+            ax.scatter(pt[0],pt[1],color='r')
     def click_event(click):
         x,y = click.xdata, click.ydata
         print('({},{})'.format(x, y))

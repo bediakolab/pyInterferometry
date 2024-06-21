@@ -147,14 +147,14 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
 
     Inorm = np.zeros((I.shape[0], I.shape[1], I.shape[2]))
     for disk in range(I.shape[0]): Inorm[disk,:,:] = normalize(I[disk,:,:])
-    
+
     # if ncoefs=3 A,B,C for Acos^2 + Bsincos + C fit
     # if ncoefs=2 A,B   for Acos^2 + B fit
     # first multistart fit for u vectors with A and B fixed as 1 and 0 respectively
     ndisks, nx, ny = I.shape[0], I.shape[1], I.shape[2]
     coefs = np.zeros((ndisks, ncoefs))
     coefs[:,0] = 1
-    tic()
+    tic()i
     uvecs, residuals = fit_u(I, coefs, nx, ny, g=g, guess=guess, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
     
     ############## making a residual sanity plot #############
