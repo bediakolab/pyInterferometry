@@ -10,6 +10,11 @@ from utils import rotate2d
 import matplotlib.pyplot as plt
 
 
+def get_smallest_dist(u1, u2, extend=True):
+    equivs = get_nearby_equivs(u, extend=extend)
+    dist = [ (ue[0,0]-uref[0])**2 + (ue[0,1] - uref[1])**2 for ue in equivs ]
+    return dist[np.argmin(np.abs(dist))]
+
 def getclosestequiv(u, uref, extend=True): 
     equivs = get_nearby_equivs(u, extend=extend)
     dist = [ (ue[0,0]-uref[0])**2 + (ue[0,1] - uref[1])**2 for ue in equivs ]
@@ -144,11 +149,15 @@ def cart_to_zonebasis(uvecs_cart):
 # (reduced zone is when coefificents c are |c|<=1/2 in lattice 
 # vector basis)
 ##################################################################
-def lv_to_rzlv(uvecs_lv, sign_wrap=True):
+def lv_to_rzlv(uvecs_lv, sign_wrap=True, shift=False):
     uvecs_rzlv = np.zeros(uvecs_lv.shape) 
     for i in range(uvecs_lv.shape[0]):
         for j in range(uvecs_lv.shape[1]):
             c1, c2 = rz_helper_pair(uvecs_lv[i,j,0], uvecs_lv[i,j,1], sign_wrap)
+            if shift:
+                # want to go from -0.5, 0.5 --> 0, 1
+                if c1 < 0: c1 += 1
+                if c2 < 0: c2 += 1
             uvecs_rzlv[i,j,0], uvecs_rzlv[i,j,1] = c1, c2 
     return uvecs_rzlv
 
@@ -178,16 +187,17 @@ def lvstrain_to_cartesianstrain(du1dx, du1dy, du2dx, du2dy):
 # (reduced zone is when coefificents c are |c|<=1/2 in lattice 
 # vector basis, cartesian reduced zone from changing basis back 
 # to cartesian following this)
+# with shift flag, will instead do c in [0,1]
 ##################################################################
-def cartesian_to_rzcartesian(uvecs_cart, sign_wrap=True):
+def cartesian_to_rzcartesian(uvecs_cart, sign_wrap=True, shift=False):
     uvecs_lv = cartesian_to_latticevec(uvecs_cart)
-    return lv_to_rzcartesian(uvecs_lv, sign_wrap)
+    return lv_to_rzcartesian(uvecs_lv, sign_wrap, shift)
 
 ##################################################################
 # moves from a lattice vector basis to reduced zone cartesian
 ##################################################################
-def lv_to_rzcartesian(uvecs_lv, sign_wrap=True):
-    uvecs_rzlv = lv_to_rzlv(uvecs_lv, sign_wrap) 
+def lv_to_rzcartesian(uvecs_lv, sign_wrap=True, shift=False):
+    uvecs_rzlv = lv_to_rzlv(uvecs_lv, sign_wrap, shift) 
     return latticevec_to_cartesian(uvecs_rzlv)
 
 ##################################################################
