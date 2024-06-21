@@ -501,7 +501,11 @@ class DataSetContainer:
             else:
                 self.is_hbl = False
 
-        if len(split_prefix) > 1: self.update_parameter("Orientation", orrientation)
+        if len(split_prefix) > 1: 
+            self.update_parameter("Orientation", orrientation)
+        else:
+            print('Did not provide P or AP in folder name, will assume P and/or no distinction')
+            orrientation = "p" # treat as P by default
         for material in materials:
             if material not in known_materials.keys():
                 print("material {} doesnt have tabulated lattice constant data will ask for manual definition".format(material))
@@ -865,8 +869,19 @@ class DataSetContainer:
             t_2 = "{:.2f}+/-{:.2f} MMXXr (pix)  {:.2f}+/-{:.2f} SPw (pix)".format(rAA, eAA, wSP, eSP)
             ax.set_title("{}\n{}".format(t_1, t_2))
         else:
-            print('Couldnt determine if material is p or ap!!, filepath error, bombing out')
-            exit()
+            print('Couldnt determine if material is p or ap, assuming no distinction and graphene like')
+            self.update_parameter("AAPercent", pAA, "make_categorize_plot")
+            self.update_parameter("BAorABPercent", pXX + pMM, "make_categorize_plot")
+            self.update_parameter("SP1Percent", pSP1, "make_categorize_plot")
+            self.update_parameter("SP2Percent", pSP2, "make_categorize_plot")
+            self.update_parameter("SP3Percent", pSP3, "make_categorize_plot")
+            self.update_parameter("AvgAAradius", rAA, "make_categorize_plot")
+            self.update_parameter("ErrAAradius", eAA, "make_categorize_plot")
+            self.update_parameter("AvgSPwidth", wSP, "make_categorize_plot")
+            self.update_parameter("ErrSPwidth", eSP, "make_categorize_plot")
+            t_1 = "{:.2f} % AA {:.2f} % AB or BA {:.2f} % SP".format(pAA, pXX + pMM, pSP1+pSP2+pSP3)
+            t_2 = "{:.2f}+/-{:.2f} AAr (pix)  {:.2f}+/-{:.2f} SPw (pix)".format(rAA, eAA, wSP, eSP)
+            ax.set_title("{}\n{}".format(t_1, t_2))
         ax.set_xlabel("$x(pixels)$")  
         ax.set_ylabel("$y(pixels)$")
         if showflag:
