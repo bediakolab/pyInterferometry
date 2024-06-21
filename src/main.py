@@ -46,6 +46,7 @@ def set_up_files(useh5=True):
     foundsomething = False
     for name in [el for el in os.listdir(datapath) if os.path.isdir(os.path.join(datapath, el))]:
         newdatapath = os.path.join(datapath, name)
+        print("going to split {} into {}x{}".format(newdatapath, Nchunk, Nchunk))
         if chunk_split_bool: chunk_split(newdatapath, Nchunk)
         for scandir in [el for el in os.listdir(newdatapath) if os.path.isdir(os.path.join(newdatapath, el))]:
             if scandir == 'before_chunksplit': continue
@@ -58,6 +59,8 @@ def set_up_files(useh5=True):
                 if not os.path.exists(os.path.join(m_dir, 'dp.h5')): 
                     print('converting a dm4 to a h5 file')
                     success = convert_dm4(scan_shape, m_dir)
+                else:
+                    success = True
                 if success : shutil.copyfile(os.path.join(m_dir, 'dp.h5'), os.path.join(savepath, "dp.h5"))
             elif (not useh5) and not os.path.exists(os.path.join(savepath, 'dp.dm4')):
                 shutil.copyfile(os.path.join(m_dir, 'Diffraction_SI.dm4'), os.path.join(savepath, "dp.dm4"))
@@ -105,10 +108,25 @@ def main():
         else:
             print('couldnt find any data to work with...')
 
+        ########################################################
+        #### for extracting vdfs and other analysis from a given 
+        #### mask.pkl file, used to study multi-layered moires 
+        #### see (very hard coded) scripts for mask generation in
+        #### bediakolab_scripts/TrilayerTEM. Better more automated
+        #### mask workflow pending.
+        #### without a mask.pkl file all analysis will proceed 
+        #### assuming a single moire pattern of interest
+        ########################################################
         if ds.check_has_mask() and boolquery("create/analyze virtual dfs using the given mask?"):
             if (not ds.check_has_masked_diskset()):
                 datacube, diskset = vdf_from_mask(ds)
                 ds.update_masked_diskset(diskset)
+                ds.select_vdf_masked_diskset()
+            else:
+                if boolquery("reselect active disk regions?"): ds.select_vdf_masked_diskset()
+                diskset = ds.extract_masked_diskset()
+            ds.make_vdf_plots(diskset, showflag=False, masked=True) 
+            exit()
 
         ########################################################
         #### displacement fitting
