@@ -7,11 +7,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from visualization import displacement_colorplot, plot_voroni, plot_adjacency 
-from basis_utils import adjust_zone, in_rz_cart, latticevec_to_cartesian, cart_to_zonebasis, single_lv_to_cart, zonebasis_to_cart, get_nearby_equivs, rotate_uvecs, adjust_zone_single
+from basis_utils import adjust_zone, cartesian_to_rzcartesian, in_rz_cart, latticevec_to_cartesian, cart_to_zonebasis, single_lv_to_cart, zonebasis_to_cart, get_nearby_equivs, rotate_uvecs, adjust_zone_single
 from gekko import GEKKO # for integer programming
 import matplotlib
 from time import time
-from utils import bin, unbin, debugplot, boolquery, get_triangles
+from utils import bin, unbin, debugplot, boolquery, get_triangles, manual_define_points
 from masking import get_aa_mask, get_sp_masks, get_sp_line_method2, get_region_centers
 import scipy.ndimage as ndimage
 from utils import combine_nearby_spots, tic, toc, getAdjacencyMatrixManual
@@ -22,15 +22,21 @@ from new_utils import normNeighborDistance
 from skimage import measure
 from masking import convex_mask
 from new_utils import anom_nan_filter, plot_images
-from utils import nan_gaussian_filter
+from utils import nan_gaussian_filter, getAdjacencyMatrixManualAB, doIntersect
 from new_utils import get_lengths, get_angles
+from scipy.spatial import Delaunay
+from numpy import ones,vstack
+from numpy.linalg import lstsq
 
-def watershed_regions(u, boundarythresh=0.5):
+def watershed_regions(u, boundarythresh=0.5, refine=True):
     
-    image = np.zeros((u.shape[0], u.shape[1]))
-    for i in range(u.shape[0]):
-        for j in range(u.shape[1]):
-            image[i,j] = (u[i,j,0]**2 + u[i,j,1]**2) **0.5
+    if len(u.shape) > 2 and u.shape[2] > 1:
+        image = np.zeros((u.shape[0], u.shape[1]))
+        for i in range(u.shape[0]):
+            for j in range(u.shape[1]):
+                image[i,j] = (u[i,j,0]**2 + u[i,j,1]**2) **0.5
+    else:
+        image = u
 
     from skimage.feature import peak_local_max
     from skimage.segmentation import watershed
@@ -74,10 +80,13 @@ def watershed_regions(u, boundarythresh=0.5):
             centers.append([avg_i, avg_j])
             region_masks.append(label_mask)
 
-        plot_images([images2, AA_regions, labeled, labels])
-        satisfied = boolquery('satisfied? (y/n')
-        if not satisfied: boundarythresh = float(input("new threshold?"))
-        else: return labels, centers, region_masks
+        if refine:
+            plot_images([images2, AA_regions, labeled, labels])
+            satisfied = boolquery('satisfied? (y/n')
+            if not satisfied: boundarythresh = float(input("new threshold?"))
+            else: return labels, centers, region_masks
+        else:
+             return labels, centers, region_masks
 
 # rotate u vectors until the sp connection closest to vertical is sp1 (since sp1,sp2,sp3 choice arbitrary)
 def automatic_sp_rotation(u, centers, adjacency_type, eps=1e-4, transpose=False, plotting=False):
@@ -139,74 +148,211 @@ def manual_adjust_voroni(u, regions, vertices):
         if boolquery('satisfied?'): break
     return regions,vertices
 
-def geometric_unwrap_tri(centers, adjacency_type, u):
+def geometric_unwrap_tri(centers, adjacency_type, u, voronibool):
 
-    triangles = get_triangles(adjacency_type > 0)
-    tri_centers = []
-    for triangle in triangles:
-        point1 = centers[triangle[0]]
-        point2 = centers[triangle[1]]
-        point3 = centers[triangle[2]]
-        center_y = np.mean([point1[0], point2[0], point3[0]])
-        center_x = np.mean([point1[1], point2[1], point3[1]])
-        l1, l2, l3 = get_lengths(point1, point2, point3)
-        a12, a23, a31 = get_angles(l1,l2,l3)
-        max_a = np.abs(np.max([a12, a23, a31])) * 180/np.pi
-        if max_a < 160: tri_centers.append([center_x, center_y])
-        else: tri_centers.append([np.nan, np.nan])
+    # AB WATERSHED
+    u_rz_noshift = cartesian_to_rzcartesian(u_cart.copy(), sign_wrap=False, shift=False) 
+    u_rz_shift = cartesian_to_rzcartesian(u_cart.copy(), sign_wrap=False, shift=True) 
+    uang = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    type1 = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    type2 = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    eps=1e-6
+    for i in range(u_cart.shape[0]):
+        for j in range(u_cart.shape[1]):
+            #umag[i,j] = np.sqrt(u[i,j,1]**2 + u[i,j,0]**2) # cartesian!
+            uang[i,j] = np.arctan(u_rz_noshift[i,j,1]/(eps + u_rz_noshift[i,j,0])) # cartesian!
+            if uang[i,j] < 0: uang[i,j] += 2*np.pi # uang now between 0 and 2pi
 
-    img = displacement_colorplot(None, u)
-    f, ax = plt.subplots()
-    ax.imshow(img, origin='lower')
+            # for the AB, BA regions the angle is around pi/6, 3pi/6, 5pi/6, 7pi/6, 9pi/6, or 11pi/6
+            # for the SP regions the angle is around 0, 2pi/6, 4pi/6, 6pi/6, 8pi/6, 10pi/6, or 12pi/6
+            uang[i,j] = uang[i,j] * 6/np.pi
 
-    for n in range(len(triangles)):
-        triangle = triangles[n]
-        if not np.isnan(tri_centers[n][0]):
-            #trix = []
-            #triy = []
-            tri_center = tri_centers[n]
-            for i in range(3):
-                #trix.append(triangle[i][0])
-                #triy.append(triangle[i][1])
-                ax.plot([triangle[(i+1)%3][0], triangle[i][0]], [triangle[(i+1)%3][1], triangle[i][1]], color="k")
-            ax.scatter(tri_center[0], tri_center[1], color='k')
+            # now for the AB, (BA) regions uang is around 1, (3), 5, (7), 9, (11)
+            # now for the SP regions uang is around 0, 2, 4, 6, 8, 10, 12
+            type1[i,j] = np.min( [np.abs(uang[i,j]-3), np.abs(uang[i,j]-7), np.abs(uang[i,j]-11)] )
+            type2[i,j] = np.min( [np.abs(uang[i,j]-1), np.abs(uang[i,j]-5),  np.abs(uang[i,j]-9)] )
+            uang[i,j] = np.min( [type1[i,j], type2[i,j]] )
 
-    plt.show()
-            
-        
-    # get voroni regions
-    points = [ [c[1], c[0]] for c in centers ]
+    regions, centers, region_masks = watershed_regions(uang, 0.35, refineWS)
+    # GOOD TO NOW
 
+    # used to see if each region is an AB or BA type
+    region_type = []
+    for center in centers:
+        if type1[center[0],center[1]] > type2[center[0],center[1]]: region_type.append(0)
+        else: region_type.append(1)
+
+    centers, adjacency_type = getAdjacencyMatrixAB(u_cart, boundary_val=0.3, delta_val=0.3, combine_crit=0, spdist=5, centers=centers, refine=refineConnect)
+    
+    vertices = None
     # get nm centers
-    n = u.shape[0]
-    start_indx = np.argmin([(c[0]-n/2)**2 + (c[1]-n/2)**2 for c in centers]) # start at AA center closest to middle
-    nmcenters  = unwrapBFS(adjacency_type, centers, start=start_indx)
-        
-    for i in range(len(centers)):
-        u = rzSignAlign(region_masks[i], u, points[i])
-        f, ax = plt.subplots(); ax.quiver(u[:,:,0], u[:,:,1]); ax.imshow(regions, origin='lower'); plt.show()
+    n = u_cart.shape[0]
+    start_indx = np.argmin([(c[0]-n/2)**2 + (c[1]-n/2)**2 for c in centers]) # start at center closest to middle
+    nmcenters, unwrap_warn  = unwrapBFS_AB(adjacency_type, centers, start=start_indx)
+
+    #for i in range(len(centers)): u = rzSignAlign(region_masks[i], u, points[i])
 
     # get n,m zone adjustments for voroni regions
     nmat, mmat = np.zeros((n, n)), np.zeros((n, n))
-    for r in range(len(regions)):
-        p = Polygon(vertices[regions[r]])
+    for r in range(len(centers)):
         for i in range(n):
             for j in range(n):
-                if p.contains(Point(i,j)):
-                    nmat[j,i] = nmcenters[r, 0]
-                    mmat[j,i] = nmcenters[r, 1]
+                if region_masks[r][i,j]:
+                    nmat[i,j] = nmcenters[r, 0]
+                    mmat[i,j] = nmcenters[r, 1]
+    # adjust zones 
+    u_unwrapped, u_adjusts = adjust_zone(u_rz_shift, nmat, mmat)
 
-    u_unwrapped, u_adjusts = adjust_zone(u.copy(), nmat, mmat)      
-    return u, u_unwrapped, u_adjusts, nmcenters, regions, vertices
+    if False:
+        f, ax = plt.subplots(2,2); 
+        ax[0,0].quiver(u_rz_shift[:,:,0], u_rz_shift[:,:,1]); 
+        ax[0,0].imshow(regions, origin='lower'); 
+        ax[0,0].set_title('raw u')
+        ax[0,1].quiver(u_unwrapped[:,:,0], u_unwrapped[:,:,1]); 
+        ax[0,1].imshow(regions, origin='lower'); 
+        ax[0,1].set_title('unwrap u')
+        ax[1,0].imshow(nmat)
+        ax[1,0].set_title('n offset')
+        ax[1,1].imshow(mmat)
+        ax[1,1].set_title('m offset')
+        plt.show()   
 
-def geometric_unwrap(centers, adjacency_type, u, voronibool=False, plotting=False, ax=None):
+    return u_unwrapped, nmat, mmat, unwrap_warn
+
+def geometric_unwrap_tri_for_testing(centers, adjacency_type, u_cart, refineWS=False, refineConnect=False):
+
+    # AB WATERSHED
+    u_rz_noshift = cartesian_to_rzcartesian(u_cart.copy(), sign_wrap=False, shift=False) 
+    u_rz_shift = cartesian_to_rzcartesian(u_cart.copy(), sign_wrap=False, shift=True) 
+    uang = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    type1 = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    type2 = np.zeros((u_cart.shape[0], u_cart.shape[1]))
+    eps=1e-6
+    for i in range(u_cart.shape[0]):
+        for j in range(u_cart.shape[1]):
+            #umag[i,j] = np.sqrt(u[i,j,1]**2 + u[i,j,0]**2) # cartesian!
+            uang[i,j] = np.arctan(u_rz_noshift[i,j,1]/(eps + u_rz_noshift[i,j,0])) # cartesian!
+            if uang[i,j] < 0: uang[i,j] += 2*np.pi # uang now between 0 and 2pi
+
+            # for the AB, BA regions the angle is around pi/6, 3pi/6, 5pi/6, 7pi/6, 9pi/6, or 11pi/6
+            # for the SP regions the angle is around 0, 2pi/6, 4pi/6, 6pi/6, 8pi/6, 10pi/6, or 12pi/6
+            uang[i,j] = uang[i,j] * 6/np.pi
+
+            # now for the AB, (BA) regions uang is around 1, (3), 5, (7), 9, (11)
+            # now for the SP regions uang is around 0, 2, 4, 6, 8, 10, 12
+            type1[i,j] = np.min( [np.abs(uang[i,j]-3), np.abs(uang[i,j]-7), np.abs(uang[i,j]-11)] )
+            type2[i,j] = np.min( [np.abs(uang[i,j]-1), np.abs(uang[i,j]-5),  np.abs(uang[i,j]-9)] )
+            uang[i,j] = np.min( [type1[i,j], type2[i,j]] )
+
+    regions, centers, region_masks = watershed_regions(uang, 0.35, refineWS)
+    # GOOD TO NOW
+
+    # used to see if each region is an AB or BA type
+    region_type = []
+    for center in centers:
+        if type1[center[0],center[1]] > type2[center[0],center[1]]: region_type.append(0)
+        else: region_type.append(1)
+
+    centers, adjacency_type = getAdjacencyMatrixAB(u_cart, boundary_val=0.3, delta_val=0.3, combine_crit=0, spdist=5, centers=centers, refine=refineConnect)
+    
+    vertices = None
+    # get nm centers
+    n = u_cart.shape[0]
+    start_indx = np.argmin([(c[0]-n/2)**2 + (c[1]-n/2)**2 for c in centers]) # start at center closest to middle
+    nmcenters, unwrap_warn  = unwrapBFS_AB(adjacency_type, centers, start=start_indx)
+
+    #for i in range(len(centers)): u = rzSignAlign(region_masks[i], u, points[i])
+
+    # get n,m zone adjustments for voroni regions
+    nmat, mmat = np.zeros((n, n)), np.zeros((n, n))
+    for r in range(len(centers)):
+        for i in range(n):
+            for j in range(n):
+                if region_masks[r][i,j]:
+                    nmat[i,j] = nmcenters[r, 0]
+                    mmat[i,j] = nmcenters[r, 1]
+    # adjust zones 
+    u_unwrapped, u_adjusts = adjust_zone(u_rz_shift, nmat, mmat)
+
+    if False:
+        f, ax = plt.subplots(2,2); 
+        ax[0,0].quiver(u_rz_shift[:,:,0], u_rz_shift[:,:,1]); 
+        ax[0,0].imshow(regions, origin='lower'); 
+        ax[0,0].set_title('raw u')
+        ax[0,1].quiver(u_unwrapped[:,:,0], u_unwrapped[:,:,1]); 
+        ax[0,1].imshow(regions, origin='lower'); 
+        ax[0,1].set_title('unwrap u')
+        ax[1,0].imshow(nmat)
+        ax[1,0].set_title('n offset')
+        ax[1,1].imshow(mmat)
+        ax[1,1].set_title('m offset')
+        plt.show()   
+
+    return u_unwrapped, nmat, mmat, unwrap_warn
+
+def geometric_unwrap_for_testing(centers, adjacency_type, u, voronibool=False, plotting=False, ax=None, man_adust=False):
 
     # get voroni regions
     if voronibool:
         points = [ [c[1], c[0]] for c in centers ]
         vor = Voronoi(points)
         regions, vertices = voronoi_finite_polygons_2d(vor)
-        regions, vertices = manual_adjust_voroni(u, regions, vertices)
+        if man_adust: regions, vertices = manual_adjust_voroni(u, regions, vertices)
+    else: # watershed
+        regions, centers, region_masks = watershed_regions(u, refine=False)
+        points = [ [c[1], c[0]] for c in centers ]
+        centers, adjacency_type = getAdjacencyMatrix(u, boundary_val=0.3, delta_val=0.3, combine_crit=0, spdist=5, centers=centers, refine=False)
+        vertices = None
+
+    # get nm centers
+    n = u.shape[0]
+    start_indx = np.argmin([(c[0]-n/2)**2 + (c[1]-n/2)**2 for c in centers]) # start at AA center closest to middle
+    nmcenters, unwrap_warn  = unwrapBFS(adjacency_type, centers, start=start_indx)
+        
+    # sign align each voroni region
+    if voronibool:
+        for i in range(len(regions)):
+            p = Polygon(vertices[regions[i]])
+            region_mask = np.zeros((n, n))
+            for x in range(n):
+                for y in range(n):
+                    if p.contains(Point(x,y)): region_mask[y,x] = 1 # point func is transpose since above
+            u = rzSignAlign(region_mask, u, points[i])
+    else:
+        for i in range(len(centers)):
+            u = rzSignAlign(region_masks[i], u, points[i])
+        if plotting: f, ax = plt.subplots(); ax.quiver(u[:,:,0], u[:,:,1]); ax.imshow(regions, origin='lower'); plt.show()
+
+    # get n,m zone adjustments for voroni regions
+    nmat, mmat = np.zeros((n, n)), np.zeros((n, n))
+    if voronibool:
+        for r in range(len(regions)):
+            p = Polygon(vertices[regions[r]])
+            for i in range(n):
+                for j in range(n):
+                    if p.contains(Point(i,j)):
+                        nmat[j,i] = nmcenters[r, 0]
+                        mmat[j,i] = nmcenters[r, 1]
+    else: 
+        for r in range(len(centers)):
+            for i in range(n):
+                for j in range(n):
+                    if region_masks[r][i,j]:
+                        nmat[i,j] = nmcenters[r, 0]
+                        mmat[i,j] = nmcenters[r, 1]
+    # adjust zones 
+    u_unwrapped, u_adjusts = adjust_zone(u.copy(), nmat, mmat)
+
+    return u_unwrapped, nmat, mmat, unwrap_warn
+
+def geometric_unwrap(centers, adjacency_type, u, voronibool=False, plotting=False, ax=None, man_adust=True):
+
+    # get voroni regions
+    if voronibool:
+        points = [ [c[1], c[0]] for c in centers ]
+        vor = Voronoi(points)
+        regions, vertices = voronoi_finite_polygons_2d(vor)
+        if man_adust: regions, vertices = manual_adjust_voroni(u, regions, vertices)
     else: # watershed
         regions, centers, region_masks = watershed_regions(u)
         points = [ [c[1], c[0]] for c in centers ]
@@ -216,7 +362,7 @@ def geometric_unwrap(centers, adjacency_type, u, voronibool=False, plotting=Fals
     # get nm centers
     n = u.shape[0]
     start_indx = np.argmin([(c[0]-n/2)**2 + (c[1]-n/2)**2 for c in centers]) # start at AA center closest to middle
-    nmcenters  = unwrapBFS(adjacency_type, centers, start=start_indx)
+    nmcenters, unwrap_warn  = unwrapBFS(adjacency_type, centers, start=start_indx)
         
     # sign align each voroni region
     if voronibool:
@@ -256,12 +402,39 @@ def geometric_unwrap(centers, adjacency_type, u, voronibool=False, plotting=Fals
     #    plot_voroni(points, nmcenters, regions, vertices, ax)
     #    ax.set_xlim(0-5, u.shape[0]+5)
     #    ax.set_ylim(0-5, u.shape[1]+5)
-    #    plt.show()        
+    #    plt.show()    
+
+    if plotting and voronibool:
+        f, ax = plt.subplots(2,3); 
+        ax[0,0].quiver(u[:,:,0], u[:,:,1]); 
+        ax[0,0].set_title('raw u')
+        ax[0,1].quiver(u_unwrapped[:,:,0], u_unwrapped[:,:,1]); 
+        ax[0,1].set_title('unwrap u')
+        ax[1,0].imshow(nmat)
+        ax[1,0].set_title('n offset')
+        ax[1,1].imshow(mmat)
+        ax[1,1].set_title('m offset')
+        plot_voroni(points, nmcenters, regions, vertices, ax[0,2])
+    elif plotting:
+        f, ax = plt.subplots(2,2); 
+        ax[0,0].quiver(u[:,:,0], u[:,:,1]); 
+        ax[0,0].imshow(regions, origin='lower'); 
+        ax[0,0].set_title('raw u')
+        ax[0,1].quiver(u_unwrapped[:,:,0], u_unwrapped[:,:,1]); 
+        ax[0,1].imshow(regions, origin='lower'); 
+        ax[0,1].set_title('unwrap u')
+        ax[1,0].imshow(nmat)
+        ax[1,0].set_title('n offset')
+        ax[1,1].imshow(mmat)
+        ax[1,1].set_title('m offset')
+    plt.show()  
+    #exit()
+
     return u, u_unwrapped, u_adjusts, nmcenters, regions, vertices
 
 # given some center locations and some lines, figure out if the lines connect 
 # the centers (within a threshold spdist) 
-def computeAdjacencyMatrix(centers, lines_sp1, lines_sp2, lines_sp3, spdist):
+def computeAdjacencyMatrixAA(centers, lines_sp1, lines_sp2, lines_sp3, spdist):
     adjacency_type  = np.zeros((len(centers), len(centers)))
     line_labels       = [1 for line in lines_sp1]
     line_labels.extend( [2 for line in lines_sp2])
@@ -277,7 +450,7 @@ def computeAdjacencyMatrix(centers, lines_sp1, lines_sp2, lines_sp3, spdist):
             for i in range(len(centers)): # look at all centers
                 center = centers[i] 
                 # if the center is close (within spdist) to the line we say it passes through it
-                if ((center[1] - xel)**2 + (center[0] - yel)**2)**0.5 < spdist: 
+                if (((center[1] - xel)**2 + (center[0] - yel)**2)**0.5 < spdist): 
                     if last_indx != -1 and last_indx != i:
                         adjacency_type[i, last_indx] = label # so we're connecting these two centers
                         adjacency_type[last_indx, i] = label # and labeling the type of the connection
@@ -285,7 +458,67 @@ def computeAdjacencyMatrix(centers, lines_sp1, lines_sp2, lines_sp3, spdist):
                     break 
     return adjacency_type
 
-def getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers=None, plt=False):
+def computeAdjacencyMatrixAB(centers, lines_sp1, lines_sp2, lines_sp3, region_type=None):
+
+    adjacency_type  = np.zeros((len(centers), len(centers)))
+    line_labels       = [1 for line in lines_sp1]
+    line_labels.extend( [2 for line in lines_sp2])
+    line_labels.extend( [3 for line in lines_sp3])
+    lines = [line for line in lines_sp1]
+    lines.extend(lines_sp2)
+    lines.extend(lines_sp3)
+
+    def line_to_vert(line, plot=False):
+        if plot: 
+            f, ax = plt.subplots(1,2)
+            ax[0].scatter(line[0], line[1])
+        x_coords = []
+        y_coords = [] 
+        for x,y in zip(line[0], line[1]):
+            if not np.isnan(x) and (not np.isnan(y)):
+                x_coords.append(x)
+                y_coords.append(y)
+        if len(x_coords) > 0:
+            # FAILS FOR VERT
+            #A = vstack([x_coords,ones(len(x_coords))]).T
+            #m, b = lstsq(A, y_coords)[0]
+            #min_x2 = np.min(x_coords)
+            #max_x2 = np.max(x_coords)
+            #ax[1].plot([min_x2, max_x2], [min_x2*m + b, max_x2*m + b], c=colors[label])
+
+            # FAILS FOR HORIZ
+            y_coords, x_coords = x_coords, y_coords 
+            A = vstack([x_coords,ones(len(x_coords))]).T
+            m, b = lstsq(A, y_coords)[0]
+            min_x2 = np.min(x_coords)
+            max_x2 = np.max(x_coords)
+            if plot: 
+                ax[1].plot([min_x2*m + b, max_x2*m + b], [min_x2, max_x2])
+            return True, [min_x2, min_x2*m + b], [max_x2, max_x2*m + b]
+        return False, None, None
+
+    def assignconnection(i1, i2):
+        nintersect = 0
+        labels = []
+        for i in range(len(lines)):
+            success, vertex1, vertex2 = line_to_vert(lines[i])
+            if success and doIntersect(vertex1,vertex2, centers[i1], centers[i2]):
+                nintersect += 1
+                labels.append( line_labels[i] )
+        if nintersect == 1 and (3 in labels): return 4 
+        if nintersect == 2 and (3 in labels) and (2 in labels): return 1 
+        if nintersect == 2 and (3 in labels) and (1 in labels): return 2 
+        if nintersect == 2 and (2 in labels) and (1 in labels): return 3
+        else: return 0
+
+    for i1 in range(len(centers)):
+        for i2 in range(i1+1, len(centers)):
+            adjacency_type[i1, i2] = assignconnection(i1, i2)
+            adjacency_type[i2, i1] = adjacency_type[i1, i2] 
+
+    return adjacency_type
+
+def getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers=None, plt=False, AB=False, region_type=None):
     mask_aa = get_aa_mask(u, boundary=boundary_val)
     mask_sp1, mask_sp2, mask_sp3, _, _ = get_sp_masks(u, mask_aa, delta=delta_val)
     mask_sp1, lines_sp1 = get_sp_line_method2(mask_sp1, plotbool=False)
@@ -295,15 +528,20 @@ def getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, cen
     if centers == None:
         centers = get_region_centers(labeled, mask_aa)
         centers = combine_nearby_spots(centers, combine_criterion=combine_crit)
-    adjacency_type = computeAdjacencyMatrix(centers, lines_sp1, lines_sp2, lines_sp3, spdist)
+
+    if not AB:
+        adjacency_type = computeAdjacencyMatrixAA(centers, lines_sp1, lines_sp2, lines_sp3, spdist)
+    else:
+        adjacency_type = computeAdjacencyMatrixAB(centers, lines_sp1, lines_sp2, lines_sp3, region_type)
+
     img = displacement_colorplot(None, u, quiverbool=False)
     plot_adjacency(img, centers, adjacency_type)
     if plt: plt.show()
     return centers, adjacency_type 
 
-def getAdjacencyMatrix(u, boundary_val=None, delta_val=None, combine_crit=None, spdist=None, centers=None, refine=True):
+def getAdjacencyMatrix(u, boundary_val=None, delta_val=None, combine_crit=None, spdist=None, centers=None, refine=True, AB=False, region_type=None):
     img = displacement_colorplot(None, u)
-    centers, adjacency_type = getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers)
+    centers, adjacency_type = getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers, AB=AB, region_type=region_type)
     if refine: 
         centers, adjacency_type = getAdjacencyMatrixManual(img, [[c[1], c[0]] for c in centers], adjacency_type) # manual adjust
         centers = [[c[1], c[0]] for c in centers]
@@ -314,6 +552,21 @@ def getAdjacencyMatrix(u, boundary_val=None, delta_val=None, combine_crit=None, 
             indx1, indx2 = kept_center_indx[i], kept_center_indx[j]
             kept_adjacency_type[i,j] = kept_adjacency_type[j,i] = adjacency_type[indx1, indx2]
     return [c for c in centers if c[0] != -1], kept_adjacency_type    
+
+def getAdjacencyMatrixAB(u, boundary_val=None, delta_val=None, combine_crit=None, spdist=None, centers=None, refine=True):
+    img = displacement_colorplot(None, u)
+    adjacency_type  = np.zeros((len(centers), len(centers)))
+    centers, adjacency_type = getAdjacencyMatrixAuto(u, boundary_val, delta_val, combine_crit, spdist, centers=centers, AB=True)
+    if refine: 
+        centers, adjacency_type = getAdjacencyMatrixManualAB(img, [[c[1], c[0]] for c in centers], adjacency_type) # manual adjust
+        centers = [[c[1], c[0]] for c in centers]
+    kept_center_indx = [i for i in range(len(centers)) if centers[i][0] != -1 ]
+    kept_adjacency_type = np.zeros((len(kept_center_indx), len(kept_center_indx)))
+    for i in range(len(kept_center_indx)):
+        for j in range(len(kept_center_indx)):
+            indx1, indx2 = kept_center_indx[i], kept_center_indx[j]
+            kept_adjacency_type[i,j] = kept_adjacency_type[j,i] = adjacency_type[indx1, indx2]
+    return [c for c in centers if c[0] != -1], kept_adjacency_type 
 
 def get_neighbors(x, y, mat, diag=False):
     Nx, Ny = mat.shape[0], mat.shape[1]
@@ -758,6 +1011,65 @@ def normDistToNearestCenter(nx, ny, centers):
     dists = dists/np.max(dists.flatten())
     return dists  
 
+def unwrapBFS_AB(adjacency_type, centers, start): 
+    visited   = np.zeros((adjacency_type.shape[0], 1))  # bool for if vertex is visited
+    nmcenters = np.zeros((adjacency_type.shape[0], 2))  # what we're determining - the unwrapped offsets
+    visited[start] = 1
+    nmcenters[start, :] = [0,0]
+    queue = []
+    queue.append(start) 
+
+    unwrap_warn = False
+
+    while len(queue) > 0: # visit each vertex
+        vert = queue.pop(0) # remove visted vertex from queue
+        neighborlist = [i for i in range(adjacency_type.shape[0]) if adjacency_type[i, vert] in [1,2,3,4]]
+        for neighbor in neighborlist:
+            if not visited[neighbor]: # scan through unvisted neighbors
+                visited[neighbor] = 1 
+                # only check sp1 and sp2 type adjacency since sp3 is a combo of these... redundant basis
+                # use sp3 to check work later?
+                if adjacency_type[neighbor, vert] == 1: # sp1 type adjacency
+                    if centers[neighbor][0] > centers[vert][0]: sign = -1
+                    else: sign = 1 # if increasing in y we're adding v1 so n here increases by 1, else decrease by 1
+                    nmcenters[neighbor, :] = nmcenters[vert, :] + [sign*1,0]
+                if adjacency_type[neighbor, vert] == 2: # sp2 type adjacency
+                    if centers[neighbor][1] > centers[vert][1]: sign = -1
+                    else: sign = 1 # if increasing in x we're adding v2 so m here increases by 1, else decrease by 1
+                    nmcenters[neighbor, :] = nmcenters[vert, :] + [0,sign*1]
+                if adjacency_type[neighbor, vert] == 3: # sp3 type adjacency, v3 = v2-v1 here sign convention
+                    if centers[neighbor][1] > centers[vert][1]: sign = -1
+                    else: sign = 1 # if increasing in x we're adding v3 so m here increases by 1, else decrease by 1
+                    nmcenters[neighbor, :] = nmcenters[vert, :] + [sign*1,sign*1] #[sign*-1,sign*1]
+                if adjacency_type[neighbor, vert] == 4:
+                    nmcenters[neighbor, :] = nmcenters[vert, :] # same cell!
+                queue.append(neighbor) # now put neighbor on queue to check it 
+            else: 
+                # assert neighbor assignment agrees with own connection
+                if adjacency_type[neighbor, vert] == 1: # sp1 type adjacency
+                    if centers[neighbor][0] > centers[vert][0]: sign = -1
+                    else: sign = 1 # if increasing in y we're adding v1 so n here increases by 1, else decrease by 1
+                    expect = nmcenters[vert, :] + [sign*1,0]
+                    if (nmcenters[neighbor, 0] != expect[0] or nmcenters[neighbor, 1] != expect[1]):
+                        print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
+                        print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 1))
+                        print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
+                        unwrap_warn = True
+                if adjacency_type[neighbor, vert] == 2: # sp2 type adjacency
+                    if centers[neighbor][1] > centers[vert][1]: sign = -1
+                    else: sign = 1 # if increasing in x we're adding v2 so m here increases by 1, else decrease by 1
+                    expect = nmcenters[vert, :] + [0,sign*1]
+                    if (nmcenters[neighbor, 0] != expect[0] or nmcenters[neighbor, 1] != expect[1]):    
+                        print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
+                        print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 2))
+                        print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
+                        unwrap_warn = True
+    for vert in range(adjacency_type.shape[0]):
+        if not visited[vert]:
+            print('Error, found erroneous AB center unconnected to neighbors, please remove and try again')
+            exit()
+    return nmcenters, unwrap_warn
+
 # function for BFS on an adjacency matrix, matrix element is 'type' of neighbor (connected by sp1, sp2 or sp3)
 # will find the integers n,m for each region so that the displacements in this region will be added to n*v1 + m*v2 (v1, v2 lattice vecs)
 # in order to get the overall unwrapped displacements
@@ -768,11 +1080,12 @@ def unwrapBFS(adjacency_type, centers, start):
     nmcenters[start, :] = [0,0]
     queue = []
     queue.append(start) 
+    unwrap_warn = False
 
     # more confident about sp1, sp2 connections so do those first
     while len(queue) > 0: # visit each vertex
         vert = queue.pop(0) # remove visted vertex from queue
-        neighborlist = [i for i in range(adjacency_type.shape[0]) if adjacency_type[i, vert] in [1,2]]
+        neighborlist = [i for i in range(adjacency_type.shape[0]) if adjacency_type[i, vert] in [1,2,3]]
         for neighbor in neighborlist:
             if not visited[neighbor]: # scan through unvisted neighbors
                 visited[neighbor] = 1 
@@ -801,6 +1114,7 @@ def unwrapBFS(adjacency_type, centers, start):
                         print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
                         print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 1))
                         print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
+                        unwrap_warn = True
                 if adjacency_type[neighbor, vert] == 2: # sp2 type adjacency
                     if centers[neighbor][1] > centers[vert][1]: sign = -1
                     else: sign = 1 # if increasing in x we're adding v2 so m here increases by 1, else decrease by 1
@@ -809,11 +1123,12 @@ def unwrapBFS(adjacency_type, centers, start):
                         print('WARNING: inconsistency in the center adjacencies, please make sure connections are good and try again')
                         print('error occured connecting {} and {} with SP{}'.format(vert, neighbor, 2))
                         print('algorithm might still work but could misattribute the lattice vector offsets added to each zone')
+                        unwrap_warn = True
     for vert in range(adjacency_type.shape[0]):
         if not visited[vert]:
-            print('Error, found erroneous AA center unconnected to neighbors, please remove and try again. Note SP3(y) ignored')
+            print('Error, found erroneous AA center unconnected to neighbors, please remove and try again.')
             exit()
-    return nmcenters
+    return nmcenters, unwrap_warn
 
 def generalBFS(start, getneighbors, do_a_thing, thing): 
     visited   = np.zeros((n, 1))  # bool for if vertex is visited
