@@ -10,6 +10,10 @@ Please see and cite the following manuscripts for a description of the method.
 
 2: Madeline Van Winkle* & Isaac M. Craig*, et al. Nat Commun 14, 2989 (2023). (In particular the SI of this work described many details of this codebase)
 
+3: Isaac M. Craig, et al. arxiv.org/abs/2406.04515 (Has many additional considerations and numerical details)
+
+The code can also provide more qualitative color-coded virtual dark fields for moirés as seen in Nature Nanotechnology (2024): 1-7 and Nature Materials 23.3 (2024): 323-330. Although precise virtual aperture definition for super-moirés is yet not automated. 
+
 ## Contact
 Please contact me with any questions, issues, or requests.
 Isaac M. Craig - craigi[at]berkeley[dot]edu
