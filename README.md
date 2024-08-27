@@ -25,7 +25,7 @@ You can then run the code from the driver script "main.py" which will guide you 
 All processed data and images will be saved in the corresponding data/Material_Name/dsN directories (where N is the dataset number). 
 
 ## Examples
-An example of a processed dataset is given in data/MoS2_AP/ds6. 
+An example of a processed dataset is given in data/MoS2_P/ds3.
 A raw Diffraction_SI.dm4 and processed diskset.pkl files used in Ref [2] are available on https://zenodo.org/record/7865970
 
 ## Common Issues 
