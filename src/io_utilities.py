@@ -621,8 +621,8 @@ class DataSetContainer:
                 img = diskset.df(n)
                 tot_img = tot_img + img
                 axes[counter].imshow(img, cmap='gray')
-                axes[counter].set_title("Disk {}".format(counter))
-                #axes[counter].set_title("Disk {}{}".format(gvecs[counter][0],gvecs[counter][1]))
+                #axes[counter].set_title("Disk {}".format(counter))
+                axes[counter].set_title("Disk {}:{}{}".format(counter, gvecs[counter][0],gvecs[counter][1]))
                 counter += 1
         for n in range(counter, len(axes)): axes[n].axis("off")
         tot_img = normalize(tot_img)

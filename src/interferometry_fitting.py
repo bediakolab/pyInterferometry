@@ -138,6 +138,7 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
     if isinstance(diskset, DiskSet):
         I = diskset.df_set()
         g = diskset.clean_normgset()
+        #print(g); exit()
     elif isinstance(diskset, np.ndarray):
         I = diskset 
         if not (isinstance(g, np.ndarray)):
@@ -158,7 +159,7 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
     uvecs, residuals = fit_u(I, coefs, nx, ny, g=g, guess=guess, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
     
     ############## making a residual sanity plot #############
-    resid_plot = False
+    resid_plot = True
     if resid_plot:
         counter = 0
         f, ax = plt.subplots(4,3)
@@ -197,16 +198,15 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
     for n in range(15):
         tic()
         coefs, resid = fit_ABC(I, uvecs, nx, ny, g, coefs, nproc=12, parallel=False, norm_bool=True)
-
+        
         # multistart fit using neighbors
         uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_neighbor_bool=True)
-
+        
         # no multistart
         #uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_bool=False)
         
         # multistart fit using grid
         #uvecs, resid = fit_u(I, coefs, nx, ny, g, nproc=12, guess=uvecs, parallel=True, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
-
         if resid_plot:
             f, ax = plt.subplots(4,3)
             ax = ax.flatten()
@@ -291,8 +291,7 @@ def fit_u_parallel(ndisks, norm_df_set, coefs, nx, ny, g, nproc=4, guess=None, m
 ####################################################################################################
 # fits the u vector for a single pixel of the dataset
 # fit u s.t. I_j = A_j * cos^2(pi g_j dot u) + B_j
-####################################################################################################
-
+###################################################################################################
 def find_g_index(g1, g2, g):
     for i in range(len(g)):
         if (g[i][0] == g1 and g[i][1] == g2): return i 
@@ -424,9 +423,44 @@ def fit_xynew(ndisks, I, coefs, x, y, g, guess=None, neighbor=False, asym=False)
     return opt_params, residuals
     """
 
+def check_jacobian(coefs, g, _costfunc, guess_params, ndisks):
+    opt = least_squares(_costfunc, guess_params, verbose=0, ftol=None, xtol=1e5, gtol=None)
+    print("finite diff jacobian ", opt.jac)
+    if (coefs.shape[1] == 2):
+        def jacobian(u):
+            ux, uy = u[0], u[1]
+            jac = np.zeros((ndisks,2))
+            for disk in range(ndisks):
+                sincos = np.cos(np.pi * np.dot(g[disk],u))*np.sin(np.pi * np.dot(g[disk],u))
+                for dim in range(2):
+                    jac[disk,dim] = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
+            return jac
+    elif (coefs.shape[1] == 3):
+        def jacobian(u):
+            ux, uy = u[0], u[1]
+            # number of disks by number of u dimensions
+            # jac[disk, dim] is partial deriv of A[disk] cos2 (pi u.g[disk]) + B[disk] wrt u[dim]
+            jac = np.zeros((ndisks,2)) 
+            for disk in range(ndisks):
+                # d(Ai cos2 (pi u.gi))/dux = -2 Ai sin(pi u.gi) cos(pi u.gi) * (pi gi[x]) := 2 Ai sincos * (pi gi[x])
+                sin = np.sin(np.pi * np.dot(g[disk],u))
+                cos = np.cos(np.pi * np.dot(g[disk],u)) 
+                sincos = sin*cos
+                # d(Bi sincos (pi u.gi))/dux = Bi(cos2-sin2) * (pi gi[x])
+                cos2minussin2 = cos*cos - sin*sin 
+                for dim in range(2):
+                    # dI[disk]/du[dim] from Ai term := -2 * g[disk][dim] * pi * A[disk] * sincos
+                    jac[disk,dim]  = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
+                    # dI[disk]/du[dim] from Bi term := g[disk][dim] * pi * B[disk] * cos2minussin2
+                    jac[disk,dim] += -1*g[disk][dim]*np.pi*coefs[disk,1]*cos2minussin2
+            return jac
+    print("analytic jacobian ", jacobian(opt.x))
+    print("difference ", opt.jac - jacobian(opt.x))
+
 def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_bool=False, multistart_neighbor_bool=False, delta=0.2, quasiN=False):
 
     val_vec = norm_df_set[:,x,y].flatten() # get the intensity values
+    # coefs[:,1] += 0.1 (used with check_jacobian... to verify on first iter when inital condition B[:]=0)
     
     # this is the function we want to fit to
     def _fit_func(u):
@@ -445,53 +479,60 @@ def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_b
     N = 2
     if guess is None: guess_params = np.zeros(N)
     else: guess_params = guess[x,y,:]
-    # upper and lower bounds for u is [-1, 1] since displacement vectors greater or less than this value will be
+    # upper and lower bounds for u is [-1/2, 1/2] since displacement vectors greater or less than this value will be
     # equivalent to some in this range (displament field is invariant to translations by a full unit cell )
     lowerbounds = -0.50 * np.ones(N)
     upperbounds =  0.50 * np.ones(N)
     bounds = (lowerbounds, upperbounds)
-
-    test_jac = False
-    if test_jac:
-        opt = least_squares(_costfunc, guess_params, bounds=bounds, verbose=0, ftol=None, xtol=1e-3, gtol=None)
-        print(opt.jac)
-
-        def jacobian(u):
-            ux = u[0]
-            uy = u[1]
-            jac = np.zeros((ndisks,2))
-            for disk in range(ndisks):
-                sincos = np.cos(np.pi * np.dot(g[disk],u))*np.sin(np.pi * np.dot(g[disk],u))
-                for dim in range(2):
-                    jac[disk,dim] = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
-            return jac
-
-        print(jacobian(opt.x))
-        print(opt.jac - jacobian(opt.x))
-        exit()
-
-    if quasiN:
+    # check_jacobian(coefs, g, _costfunc, guess_params, ndisks)
+        
+    if quasiN: 
         optfunc = lambda guess_params: least_squares(_costfunc, guess_params, bounds=bounds, verbose=0, ftol=None, xtol=1e-3, gtol=None)
+    
     else:
-        # function returns Ii = Ai cos2 (pi u . gi) + Bi, i from 0 to 12
+        # function returns Ii = Ai cos2 (pi u . gi) + Bi
         # parameters are [ux, uy]
         # jac[i,j] is partial derivative of func[i] with respect to parameter[j]
-        print(" youre trying to use newton linear... I only implemented without SinCos term! ")
-        assert(coefs.shape[1] == 2)
+    
+        if (coefs.shape[1] == 2): # Ii = Ai cos2 (pi u.gi) + Bi 
         
-        def jacobian(u):
-            ux = u[0]
-            uy = u[1]
-            jac = np.zeros((ndisks,2))
-            for disk in range(ndisks):
-                sincos = np.cos(np.pi * np.dot(g[disk],u))*np.sin(np.pi * np.dot(g[disk],u))
-                for dim in range(2):
-                    jac[disk,dim] = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
-            return jac
+            def jacobian(u):
+                ux, uy = u[0], u[1]
+                # number of disks by number of u dimensions
+                # jac[disk, dim] is partial deriv of A[disk] cos2 (pi u.g[disk]) + B[disk] wrt u[dim]
+                jac = np.zeros((ndisks,2)) 
+                for disk in range(ndisks):
+                    # dAi/dux = -2 Ai sin(pi u.gi) cos(pi u.gi) * (pi gi[x]) := -2 Ai sincos * (pi gi[x])
+                    sincos = np.cos(np.pi * np.dot(g[disk],u)) * np.sin(np.pi * np.dot(g[disk],u))
+                    for dim in range(2):
+                        # dA[disk]/du[dim] := -2 * g[disk][dim] * pi * A[disk] * sincos
+                        jac[disk,dim] = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
+                return jac
 
-        optfunc = lambda guess_params: least_squares(_costfunc, guess_params, jac=jacobian, bounds=bounds, verbose=0, ftol=None, xtol=1e-3, gtol=None)
+            optfunc = lambda guess_params: least_squares(_costfunc, guess_params, jac=jacobian, bounds=bounds, verbose=0, ftol=None, xtol=1e-3, gtol=None)
 
+        if (coefs.shape[1] == 3): # Ii = Ai cos2 (pi u.gi) + Bi sincos(pi u.gi) + Ci
+        
+            def jacobian(u):
+                ux, uy = u[0], u[1]
+                # number of disks by number of u dimensions
+                # jac[disk, dim] is partial deriv of A[disk] cos2 (pi u.g[disk]) + B[disk] wrt u[dim]
+                jac = np.zeros((ndisks,2)) 
+                for disk in range(ndisks):
+                    # d(Ai cos2 (pi u.gi))/dux = -2 Ai sin(pi u.gi) cos(pi u.gi) * (pi gi[x]) := 2 Ai sincos * (pi gi[x])
+                    sin = np.sin(np.pi * np.dot(g[disk],u))
+                    cos = np.cos(np.pi * np.dot(g[disk],u)) 
+                    sincos = sin*cos
+                    # d(Bi sincos (pi u.gi))/dux = Bi(cos2-sin2) * (pi gi[x])
+                    cos2minussin2 = cos*cos - sin*sin 
+                    for dim in range(2):
+                        # dI[disk]/du[dim] from Ai term := -2 * g[disk][dim] * pi * A[disk] * sincos
+                        jac[disk,dim]  = 2*g[disk][dim]*np.pi*coefs[disk,0]*sincos
+                        # dI[disk]/du[dim] from Bi term := g[disk][dim] * pi * B[disk] * cos2minussin2
+                        jac[disk,dim] += -1*g[disk][dim]*np.pi*coefs[disk,1]*cos2minussin2
+                return jac
 
+            optfunc = lambda guess_params: least_squares(_costfunc, guess_params, jac=jacobian, bounds=bounds, verbose=0, ftol=None, xtol=1e-3, gtol=None)
 
     if multistart_bool and not multistart_neighbor_bool:
         # get all the multi-start positions to try
@@ -522,33 +563,6 @@ def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_b
     uvecs = opt_params
     residuals = opt_residuals
     return uvecs, residuals
-
-def fit_xy_linear(ndisks, norm_df_set, coefs, x, y, nx, ny, g):
-
-    Ifit = norm_df_set[:,x,y].flatten()
-
-    A = np.zeros((ndisks,2))
-
-    for disk in range(ndisks):
-        A[disk,0] = g[disk][0]
-        A[disk,1] = g[disk][1]
-
-    phi = [0,0,0,0,0,0,0,0,0,0,0,0]
-    for disk in range(ndisks) :
-        val = np.max( [(Ifit[disk] - coefs[disk,1])/coefs[disk,0], 0] )
-        val = np.sqrt( val )
-        val = np.min( [val, 1] )
-        phi[disk] =  (1/np.pi) * np.arccos( val ) 
-
-    # convex so its gonna be global!
-    #print(A)
-    #print(phi)
-    opt = lsq_linear(A, phi) # A is (m,n) phi is (m,)
-    opt_params = opt.x 
-    success = opt.success
-    opt_cost = opt.cost
-
-    return opt_params, opt_cost
 
 def fit_together_serial(df_set, g, guess = None, ncoefs= 2, quasiN=False):
 
@@ -715,31 +729,6 @@ def fit_together_serial(df_set, g, guess = None, ncoefs= 2, quasiN=False):
 ####################################################################################################
 # fit A_j and B_j s.t. I_j(x,y) = A_j * cos^2(pi g_j dot u(x,y)) + B_j
 ####################################################################################################
-def fit_ABC_disk_old(norm_df, u, nx, ny, g, coef_guess):
-    val_vec = norm_df.flatten()
-    def _fit_func(coefs):
-        val = np.zeros((nx, ny))
-        for x in range(nx):
-            for y in range(ny):
-                if len(coefs) == 2: 
-                    val[x,y] =  coefs[0] * np.cos( np.pi * np.dot(g, u[x,y]) ) ** 2 + coefs[1]
-                elif len(coefs) == 3: 
-                    val[x,y] =  coefs[0] * np.cos( np.pi * np.dot(g, u[x,y]) ) ** 2 + coefs[2]
-                    val[x,y] += coefs[1] * np.cos( np.pi * np.dot(g, u[x,y]) ) * np.sin( np.pi * np.dot(g, u[x,y]) )
-        return val.flatten()
-    def _costfunc(coef):
-        pred_vec = _fit_func(coef)
-        return val_vec - pred_vec.flatten()
-    lowerbounds = [-2.0 for coef in coef_guess] # might change??
-    upperbounds = [ 2.0 for coef in coef_guess]
-    bounds = (lowerbounds, upperbounds)
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        opt = least_squares(_costfunc, coef_guess, bounds=bounds, verbose=0, ftol=1e-9, xtol=1e-8, gtol=1e-8)
-        opt_params = opt.x # coefs!
-        opt_residuals = np.sum(_costfunc(opt.x))
-    return opt_params, opt_residuals
-
 def fit_ABC_disk(norm_df, u, nx, ny, g, coef_guess):
     I = norm_df.flatten()
     u = u.reshape(nx*ny, 2)
@@ -768,7 +757,7 @@ def fit_ABC(df_set, u, nx, ny, g, coef_guess, nproc=1, parallel=False, norm_bool
     return coef, residuals
 
 def fit_ABC_parallel(ndisks, norm_df_set, coef_guess, nx, ny, g, u, nproc=4):
-    fit_wrap = lambda diskno: fit_ABC_disk(norm_df_set[diskno,:,:], u, nx, ny, g[diskno,:], coef_guess[diskno,:])
+    fit_wrap = lambda diskno: fit_ABC_disk(norm_df_set[diskno,:,:], u, nx, ny, g[diskno], coef_guess[diskno,:])
     with Pool(processes=nproc) as pool: output = pool.map(fit_wrap, range(ndisks))
     coefs = np.zeros(coef_guess.shape)
     residuals = np.zeros((ndisks, 1))
@@ -780,7 +769,7 @@ def fit_ABC_parallel(ndisks, norm_df_set, coef_guess, nx, ny, g, u, nproc=4):
 def fit_ABC_serial(ndisks, norm_df_set, coef_guess, nx, ny, g, u):
     coefs = np.zeros((coef_guess.shape[0], coef_guess.shape[1]))
     residuals = np.zeros((ndisks,1))
-    fit_wrap = lambda diskno: fit_ABC_disk(norm_df_set[diskno,:,:], u, nx, ny, g[diskno,:], coef_guess[diskno,:])
+    fit_wrap = lambda diskno: fit_ABC_disk(norm_df_set[diskno,:,:], u, nx, ny, g[diskno], coef_guess[diskno,:])
     for diskno in range(ndisks):
         print("{}% done...".format(100*diskno/ndisks))
         coefs[diskno,:], residuals[diskno] = fit_wrap(diskno)

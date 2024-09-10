@@ -11,6 +11,7 @@ import pickle
 from skimage.measure import approximate_polygon
 from scipy.optimize import least_squares
 import numpy as np
+from new_utils import fit_ellipse
 
 # for first two rings, fit to the hexagons expected of triangular lattice on-zone
 # assuming minimal impact of stigmation and heterostrain on effective g vectors
@@ -18,8 +19,8 @@ import numpy as np
 # need to know the rotational offset between actual g_i and the values used
 def expected_bragg_locs(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
     center = np.array([com_x, com_y])
-    a1rot = scale * rotate2d(np.array([0,1]), rotation*np.pi/180)
-    a2rot = scale * rotate2d(np.array([-np.sqrt(3)/2, 0.5]), rotation*np.pi/180)
+    a1rot = scale * rotate2d(np.array([0,-1]), rotation*np.pi/180)
+    a2rot = scale * rotate2d(np.array([np.sqrt(3)/2, -0.5]), rotation*np.pi/180)
     pts = []
     locs = [ (1,0), (-1,0), (0,1), (0,-1), (1,-1), (-1,1), (2,-1), (-1,2), (-2,1), (1,-2), (1,1), (-1,-1) ]
     for nm in locs: pts.append( center + nm[0]*a1rot + nm[1]*a2rot )
@@ -34,7 +35,6 @@ def expected_bragg_locs(gvecs, com_x, com_y, rotation, scale=1): # no stigmation
         use_pts.append(pts[index_guess_pt])
         pts.pop(index_guess_pt)
     return use_pts
-
 def expected_bragg_dists(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
     pts = expected_bragg_locs(gvecs, com_x, com_y, rotation, scale)
     dists = []
@@ -42,8 +42,8 @@ def expected_bragg_dists(gvecs, com_x, com_y, rotation, scale=1): # no stigmatio
     return dists 
 def expected_hex_g(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
     center = np.array([com_x, com_y])
-    a1rot = scale * rotate2d(np.array([0,1]), rotation*np.pi/180)
-    a2rot = scale * rotate2d(np.array([-np.sqrt(3)/2, 0.5]), rotation*np.pi/180)
+    a1rot = scale * rotate2d(np.array([0,-1]), rotation*np.pi/180)
+    a2rot = scale * rotate2d(np.array([np.sqrt(3)/2, -0.5]), rotation*np.pi/180)
     pts = []
     locs = [ (1,0), (-1,0), (0,1), (0,-1), (1,-1), (-1,1), (2,-1), (-1,2), (-2,1), (1,-2), (1,1), (-1,-1) ]
     for nm in locs: pts.append( center + nm[0]*a1rot + nm[1]*a2rot )
@@ -58,7 +58,6 @@ def expected_hex_g(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assu
         simplifygvecs.append(locs[index_guess_pt])
         locs.pop(index_guess_pt)        
     return simplifygvecs, use_pts
-
 def fit_disklocations_to_hexagonal(ax, diskset):
 
     distances = []
@@ -82,6 +81,17 @@ def fit_disklocations_to_hexagonal(ax, diskset):
     guess_prms = [ com[0], com[1], 0, guess_scale ]
     print("starting with central=[{:.2f},{:.2f}], twist={:.2f} degrees, scale={:.2f}".format(com[0], com[1], 0, guess_scale))
     opt = least_squares(_cost_func, guess_prms, verbose=1, max_nfev=8000)
+
+    # want parameter uncertainties, formal errors
+    # returned opt.jac.J is s.t. J^T@J is a Gauss-Newton approximation of the Hessian of the cost function
+    covariance = np.linalg.inv(opt.jac.T @ opt.jac) # convariance estimate from Hessian approx 
+    # opt.fun is vector of residuals
+    weighted_cov = covariance * np.sum(opt.fun**2) / (opt.fun.size - opt.x.size)
+    # weighting covariance RMS of residuals, so multiplty by sum of resid^2 divided by DOF
+    std = np.sqrt(np.diagonal(weighted_cov))
+    # now these are uncertainty (within one standard dev) of parameters "formal errors"
+    rotation_uncertainty = std[2]
+
     comx, comy, rotation, scale = opt.x[:]
     # can add integer multiples of 60 degrees, want to pick smaller angle (-30 to 30)
     # probably better to use modulo math here, but really not bottleneck and this works fine
@@ -98,16 +108,31 @@ def fit_disklocations_to_hexagonal(ax, diskset):
         for i in range(len(graw)): 
             ax.scatter(pts[i][0], pts[i][1], c='r')
             ax.scatter(graw[i][0], graw[i][1], c='k')
-            ax.text(pts[i][0], pts[i][1], "{:.1f}{:.1f}".format(idealized_gvecs[i][0],idealized_gvecs[i][1]), c='k')
+            ax.text(pts[i][0], pts[i][1], "{:.0f}{:.0f} ({:.0f})".format(idealized_gvecs[i][0],idealized_gvecs[i][1], i), c='k')
         idealized_gvecs, pts = expected_hex_g(graw, comx, comy, 0, scale)
         for i in range(len(pts)): 
             ax.scatter(pts[i][0], pts[i][1], c='b')
-            ax.text(pts[i][0], pts[i][1], "{:.1f}{:.1f}".format(idealized_gvecs[i][0],idealized_gvecs[i][1]), c='b')
+            ax.text(pts[i][0], pts[i][1], "{:.0f}{:.0f} ({:.0f})".format(idealized_gvecs[i][0],idealized_gvecs[i][1], i), c='b')
         ax.axis('equal')
-    dists = expected_bragg_dists(graw, comx, comy, rotation, scale)
-    print('stigmation estimate: ', dists)
-    ax.text(0,0, 'hex fit (rot={:.2f} deg)'.format(rotation), c='r')
-    ax.text(0,0.25, 'input',c='k')
+
+    print('stigmation estimate...')
+    ringnos = diskset.determine_rings()
+    x, y = [], []
+    for i in range(len(graw)): 
+        gx, gy = graw[i][0] - comx, graw[i][1] - comy
+        if ringnos[i] == 2: 
+            gx /= np.sqrt(3)
+            gy /= np.sqrt(3)
+        x.append(gx)
+        y.append(gy) 
+    x0, y0, ap, bp, e, phi, xfit, yfit = fit_ellipse(np.array(x), np.array(y))
+    print("...fit eccentricity is {} (0 if no stig/heterostrain), semi major and semi minor axes of {} and {} ".format(e, ap, bp))
+    print("The angle of anticlockwise rotation of the major-axis from x-axis is {} degrees".format(phi*180/np.pi))
+    if ax != None: ax.plot(xfit, yfit, color='grey')
+
+    print('rotation uncertainty (formal error, 1sigma) in degrees : ', rotation_uncertainty)
+    ax.text(0,0, 'fit (rot={:.2f}+/-{:.2f} deg)'.format(rotation, rotation_uncertainty), c='r')
+    ax.text(0,0.25, 'input (eccent={:.2f})'.format(e), c='k')
     ax.text(0,-0.25, 'g used',c='b')
     return idealized_gvecs, rotation
 
