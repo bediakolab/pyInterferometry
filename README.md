@@ -1,14 +1,18 @@
 
 # pyInterferometry - Python Bragg Interferometry Code
-Python code for preforming Bragg Interferometry, a data analysis technique for 4D-STEM of moiré materials as described in Refs [1,2].
-Implemented for and used in Ref [2].
+Python code for performing Bragg Interferometry, a data analysis technique for 4D-STEM of moiré materials as described in Refs [1,2].
+Implemented for and used in Ref [2]. Some further considerations and a more detailed description of the method are at [3].
 
 ## Citation
-Please see and cite the following manuscripts for a description of the method.
+Please see the following manuscripts for a description of the method.
 
-1: Nathanael P. Kazmierczak, Madeline Van Winkle, et al. Nature materials 20.7 (2021): 956-963.
+1: Nathanael P. Kazmierczak* & Madeline Van Winkle*, et al. Nature Materials 20.7 (2021): 956-963.
 
-2: Madeline Van Winkle, Isaac M. Craig, et al. Nat Commun 14, 2989 (2023). (In particular the SI of this work described many details of this codebase)
+2: Madeline Van Winkle* & Isaac M. Craig*, et al. Nat Commun 14, 2989 (2023). (In particular, the SI of this work described many details of this codebase)
+
+3: Isaac M. Craig, et al. J. Appl. Phys. 136, 074301 (2024). (Has some additional considerations and numerical details)
+
+The code can also provide more qualitative color-coded virtual dark fields as seen in Nature Nanotechnology (2024): 1-7 and Nature Materials 23.3 (2024): 323-330. Although precise virtual aperture definition for materials with multiple moiré patterns is not yet automated. 
 
 ## Contact
 Please contact me with any questions, issues, or requests.
@@ -21,7 +25,7 @@ You can then run the code from the driver script "main.py" which will guide you 
 All processed data and images will be saved in the corresponding data/Material_Name/dsN directories (where N is the dataset number). 
 
 ## Examples
-An example of a processed dataset is given in data/MoS2_AP/ds6. 
+An example of a processed dataset is given in data/MoS2_P/ds3.
 A raw Diffraction_SI.dm4 and processed diskset.pkl files used in Ref [2] are available on https://zenodo.org/record/7865970
 
 ## Common Issues 
