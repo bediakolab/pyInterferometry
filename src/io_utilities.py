@@ -33,7 +33,7 @@ def bombout(message):
 
 def load_existing_dataset():
     dspaths = glob.glob(os.path.join('..', 'data', '*', 'ds*'))
-    print('KEY:\t\t Name\t\t\t\t\t Has Raw?\t Has VDFs?\t Has Disps?\t Has Unwrap?')
+    print('KEY:\t\t Name\t\t\t\t Has Raw?\t Has VDFs?\t Has Disps?\t Has Unwrap?')
     for i in range(len(dspaths)):
         dspath = dspaths[i] 
         ds = DataSetContainer(dspath)
@@ -430,7 +430,7 @@ class DataSetContainer:
         self.set_sample_rotation()
 
     def set_sample_rotation(self):
-        if self.check_parameter_is_set("SampleRotation"): 
+        if False:#self.check_parameter_is_set("SampleRotation"): 
             print("not resetting sample rotation since theres a value in info.txt...")
             return
         if not self.check_has_diskset(): 
@@ -438,14 +438,14 @@ class DataSetContainer:
             return
         else:
             diskset = self.extract_diskset()
-            mean_ang, stderr_ang = diskset.get_rotatation(True, self.rotsanitypath)
+            mean_ang = diskset.get_rotatation(self.rotsanitypath)
+            self.update_diskset(diskset) # has info about rotation now
             rotation_correction = -11.3
             mean_ang = mean_ang + rotation_correction
             print('Adding rotatational correction of {} degrees to the measured sample rotation'.format(rotation_correction))
             self.update_parameter("SampleRotation", mean_ang )
             print('total SampleRotation (convenience + instrument) is : ', mean_ang)
             self.update_parameter("K3toHAADFRotation_Used", rotation_correction )
-            self.update_parameter("SampleRotationStdErr", stderr_ang )
 
     def update_data_flags(self):
         dataflag = self.update_flags(data_quality_flags, "DataQualityFlag", checkfunc=self.check_has_displacement, plotfunc=self.make_displacement_plot)
@@ -550,7 +550,7 @@ class DataSetContainer:
         if self.diskset is None: self.extract_diskset()
         diskset = self.diskset
         f, ax = plt.subplots(1, 1)
-        gvecs = diskset.clean_normgset()
+        gvecs = diskset.clean_normgset(self.rotsanitypath)
         ringnos = diskset.determine_rings()
         counter = 0
         ring1 = np.zeros((diskset.nx, diskset.ny))
@@ -575,7 +575,7 @@ class DataSetContainer:
         nx, ny = int(np.ceil(diskset.size ** 0.5)), int(np.ceil(diskset.size ** 0.5))
         f, axes = plt.subplots(nx, ny)
         axes = axes.flatten()
-        gvecs = diskset.clean_normgset()
+        gvecs = diskset.clean_normgset(self.rotsanitypath)
         for n in range(diskset.size):
             img = diskset.df(n)
             axes[n].imshow(img, cmap='gray')
@@ -615,7 +615,7 @@ class DataSetContainer:
         nx, ny = int(np.ceil(diskset.size_in_use ** 0.5)), int(np.ceil(diskset.size_in_use ** 0.5))
         f, axes = plt.subplots(nx, ny)
         axes = axes.flatten()
-        gvecs = diskset.clean_normgset()
+        gvecs = diskset.clean_normgset(self.rotsanitypath)
         for n in range(diskset.size):
             if diskset.in_use(n): 
                 img = diskset.df(n)
@@ -651,7 +651,7 @@ class DataSetContainer:
             I = diskset.df_set()
             g1  = np.array([ 0, 2/np.sqrt(3)])
             g2  = np.array([-1, 1/np.sqrt(3)])
-            g   = diskset.clean_normgset(sanity_plot = False)
+            g   = diskset.clean_normgset(self.rotsanitypath)
             otherdisk = -1
             for n in range(12):
                 df = I[n,:,:]
@@ -915,7 +915,7 @@ class DataSetContainer:
         dfs = []
         dfsA = []
         dfsB = []
-        g   = diskset.clean_normgset(sanity_plot = False)
+        g   = diskset.clean_normgset(self.rotsanitypath)
         ringnos = diskset.determine_rings()
 
         for n in range(len(g)): I[n,:,:] = normalize(I[n,:,:])

@@ -23,7 +23,7 @@ import warnings
 def verify_dfs(savepath, diskset, coefs, ulv):
 
     I = diskset.df_set()
-    g = diskset.clean_normgset(sanity_plot = False)
+    g = diskset.clean_normgset()
     for n in range(len(g)):
         I[n,:,:] = normalize(I[n,:,:])
     ndisks = I.shape[0]
@@ -137,7 +137,7 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
 
     if isinstance(diskset, DiskSet):
         I = diskset.df_set()
-        g = diskset.clean_normgset(sanity_plot = False)
+        g = diskset.clean_normgset()
     elif isinstance(diskset, np.ndarray):
         I = diskset 
         if not (isinstance(g, np.ndarray)):
@@ -476,6 +476,7 @@ def fit_xy(ndisks, norm_df_set, coefs, x, y, nx, ny, g, guess=None, multistart_b
         # function returns Ii = Ai cos2 (pi u . gi) + Bi, i from 0 to 12
         # parameters are [ux, uy]
         # jac[i,j] is partial derivative of func[i] with respect to parameter[j]
+        print(" youre trying to use newton linear... I only implemented without SinCos term! ")
         assert(coefs.shape[1] == 2)
         
         def jacobian(u):

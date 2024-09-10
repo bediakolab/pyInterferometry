@@ -8,6 +8,108 @@ from utils import *
 from time import sleep
 import os
 import pickle
+from skimage.measure import approximate_polygon
+from scipy.optimize import least_squares
+import numpy as np
+
+# for first two rings, fit to the hexagons expected of triangular lattice on-zone
+# assuming minimal impact of stigmation and heterostrain on effective g vectors
+# needed since will be using more idealized g_i in the interferometry fitting and 
+# need to know the rotational offset between actual g_i and the values used
+def expected_bragg_locs(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
+    center = np.array([com_x, com_y])
+    a1rot = scale * rotate2d(np.array([0,1]), rotation*np.pi/180)
+    a2rot = scale * rotate2d(np.array([-np.sqrt(3)/2, 0.5]), rotation*np.pi/180)
+    pts = []
+    locs = [ (1,0), (-1,0), (0,1), (0,-1), (1,-1), (-1,1), (2,-1), (-1,2), (-2,1), (1,-2), (1,1), (-1,-1) ]
+    for nm in locs: pts.append( center + nm[0]*a1rot + nm[1]*a2rot )
+    # getting an ordering of the expected disks aligning with provided g,
+    # also will deal with scenario where only measure 11 disks from beam stop
+    use_pts = []
+    #print(pts)
+    for g in gvecs:
+        dists = [(g[0] - pts[i][0])**2 + (g[1] - pts[i][1])**2 for i in range(len(pts))]
+        #print(dists)
+        index_guess_pt = np.argmin(dists)
+        use_pts.append(pts[index_guess_pt])
+        pts.pop(index_guess_pt)
+    return use_pts
+
+def expected_bragg_dists(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
+    pts = expected_bragg_locs(gvecs, com_x, com_y, rotation, scale)
+    dists = []
+    for pt in pts: dists.append(((pt[0]-com_x)**2 + (pt[1]-com_y)**2)**0.5)
+    return dists 
+def expected_hex_g(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
+    center = np.array([com_x, com_y])
+    a1rot = scale * rotate2d(np.array([0,1]), rotation*np.pi/180)
+    a2rot = scale * rotate2d(np.array([-np.sqrt(3)/2, 0.5]), rotation*np.pi/180)
+    pts = []
+    locs = [ (1,0), (-1,0), (0,1), (0,-1), (1,-1), (-1,1), (2,-1), (-1,2), (-2,1), (1,-2), (1,1), (-1,-1) ]
+    for nm in locs: pts.append( center + nm[0]*a1rot + nm[1]*a2rot )
+    # getting an ordering of the expected disks aligning with provided g,
+    # also will deal with scenario where only measure 11 disks from beam stop
+    simplifygvecs, use_pts = [], []
+    for g in gvecs:
+        dists = [(g[0] - pts[i][0])**2 + (g[1] - pts[i][1])**2 for i in range(len(pts))]
+        index_guess_pt = np.argmin(dists)
+        use_pts.append(pts[index_guess_pt])
+        pts.pop(index_guess_pt)
+        simplifygvecs.append(locs[index_guess_pt])
+        locs.pop(index_guess_pt)        
+    return simplifygvecs, use_pts
+
+def fit_disklocations_to_hexagonal(ax, diskset):
+
+    distances = []
+    diskset.set_com_central()
+    com = diskset.centralbeam
+    graw = diskset.d_set()
+    #print('fitting with ', graw)
+    ringnos = diskset.determine_rings()
+    for i in range(len(graw)): 
+        if ringnos[i] == 1: 
+            distances.append((graw[i][0]**2 + graw[i][1]**2)**0.5)
+        if ringnos[i] == 2: 
+            distances.append(1/np.sqrt(3) * (graw[i][0]**2 + graw[i][1]**2)**0.5)
+    guess_scale = np.mean(distances)
+
+    def _cost_func(vars):
+        comx, comy, rotation, scale = vars[:]
+        pts = expected_bragg_locs(graw, comx, comy, rotation, scale)
+        return [((y[0] - l[0])**2 + (y[1] - l[1])**2)**0.5 for y,l in zip(pts,graw)]
+
+    guess_prms = [ com[0], com[1], 0, guess_scale ]
+    print("starting with central=[{:.2f},{:.2f}], twist={:.2f} degrees, scale={:.2f}".format(com[0], com[1], 0, guess_scale))
+    opt = least_squares(_cost_func, guess_prms, verbose=1, max_nfev=8000)
+    comx, comy, rotation, scale = opt.x[:]
+    # can add integer multiples of 60 degrees, want to pick smaller angle (-30 to 30)
+    # probably better to use modulo math here, but really not bottleneck and this works fine
+    orig_rot = rotation
+    while np.abs(rotation) > 30:
+        if rotation > 0: 
+            rotation -= 60
+        elif rotation < 0: 
+            rotation += 60
+    print('rotation {} --> {}'.format(orig_rot, rotation))
+    print("ending with central=[{:.2f},{:.2f}], twist={:.2f} degrees, scale={:.2f}".format(comx, comy, rotation, scale))
+    idealized_gvecs, pts = expected_hex_g(graw, comx, comy, rotation, scale)
+    if ax != None:
+        for i in range(len(graw)): 
+            ax.scatter(pts[i][0], pts[i][1], c='r')
+            ax.scatter(graw[i][0], graw[i][1], c='k')
+            ax.text(pts[i][0], pts[i][1], "{:.1f}{:.1f}".format(idealized_gvecs[i][0],idealized_gvecs[i][1]), c='k')
+        idealized_gvecs, pts = expected_hex_g(graw, comx, comy, 0, scale)
+        for i in range(len(pts)): 
+            ax.scatter(pts[i][0], pts[i][1], c='b')
+            ax.text(pts[i][0], pts[i][1], "{:.1f}{:.1f}".format(idealized_gvecs[i][0],idealized_gvecs[i][1]), c='b')
+        ax.axis('equal')
+    dists = expected_bragg_dists(graw, comx, comy, rotation, scale)
+    print('stigmation estimate: ', dists)
+    ax.text(0,0, 'hex fit (rot={:.2f} deg)'.format(rotation), c='r')
+    ax.text(0,0.25, 'input',c='k')
+    ax.text(0,-0.25, 'g used',c='b')
+    return idealized_gvecs, rotation
 
 # click instead of asking for entries
 def manual_select_disks(diskset, dp, use_log):
@@ -211,6 +313,8 @@ def get_peak_radius(dp, peaks, dsnum=None, prefix=None, contour_boundary=0.35, d
 class DiskSet:
 
     def __init__(self, size, nx, ny):
+        self._conven_rotation = None
+        self._idealized_gvecs = None
         self.size_in_use = 0                # number of bragg disks the user is interested in using
         self._xvec = np.zeros(size)         # the x positions of the bragg disk centers
         self._yvec = np.zeros(size)         # the y positions of the bragg disk centers
@@ -362,12 +466,16 @@ class DiskSet:
         return [self._xvec[n]-self.centralbeam[0], self._yvec[n]-self.centralbeam[1]]
 
     # calculate the disk center as the center of mass of all the identified peaks in the diffraction pattern
+    # not a good guess at all when have less than 12 disks due to beam stop, but good enough as an initial 
+    # guess for the least squares gvector fit to what's expected of perfect triangular lattice (without stig or heterostrain)
     def set_com_central(self):
         self.centralbeam = [0,0]
+        ndisk = 0
         for n in range(self.size):
             if self.in_use(n):
                 self.centralbeam[0] += self._xvec[n]
                 self.centralbeam[1] += self._yvec[n]
+                ndisk += 1
         self.centralbeam[0] /= self.size_in_use
         self.centralbeam[1] /= self.size_in_use
         return self.centralbeam
@@ -382,7 +490,8 @@ class DiskSet:
                 i += 1
         return dfset
 
-    # returns set of distances from central beam for disks that have been integrated (tagged as important) only
+    # returns set of vectors from central beam for disks that have been integrated (tagged as important) only
+    # note for a moire, these will be centers of overlap regions so gvectors will be halfway between a given set of bilayers
     def d_set(self):
         self.set_com_central()
         #assert( self.size_in_use == len([n for n in range(self.size) if self.in_use(n)]) )
@@ -398,12 +507,7 @@ class DiskSet:
         dset[:,0] = -dset[:,0]
         return dset
 
-    def norm_dset(self):
-        dset = self.d_set()
-        for i in range(len(dset)):
-            dset[i,:] /= (dset[i,0]**2 + dset[i,1]**2)**0.5
-        return dset
-
+    # finds friedel pairs
     def get_pairs(self):
         g = self.clean_normgset()
         pairs = []
@@ -417,189 +521,25 @@ class DiskSet:
                     unpaired_disks.remove(disk2)
                     break
             pairs.append([disk1, disk2])
-        return pairs
+        return pairs      
 
-    def rotated_normgset(self, sanity_plot=False):
-        g = self.norm_dset()
-        ringnos = self.determine_rings()
-        indx_1100 = -1
-        val_1100 = -np.inf
-        for i in range(len(g)):
-            if ringnos[i] == 1:
-                if g[i,1] > val_1100:
-                    val_1100 = g[i,1]
-                    indx_1100 = i
-        # get angle from g[i,:] to [0,1]
-        theta = np.arccos(np.dot([0,1],g[indx_1100,:]))
-        if sanity_plot:
-            f, ax = plt.subplots()
-            for i in range(len(g)): 
-                if ringnos[i] == 1:
-                    ax.scatter(g[i][0], g[i][1], c='k')
-                if ringnos[i] == 2:
-                    ax.scatter(2*g[i][0], 2*g[i][1], c='k')    
-        for i in range(len(g)):
-            g[i,:] = rotate2d(g[i,:], -theta)
-        if sanity_plot:
-            for i in range(len(g)): 
-                if ringnos[i] == 1:
-                    ax.scatter(g[i][0], g[i][1], c='r')
-                if ringnos[i] == 2:
-                    ax.scatter(2*g[i][0], 2*g[i][1], c='r')    
-            plt.show()    
-        return g
+    def get_rotatation(self, plotpath=None):
+        if (not hasattr(self, '_conven_rotation')) or self._conven_rotation == None or boolquery("redo sample rotation? (fit dp)"):
+            if plotpath != None: f, ax = plt.subplots()
+            idealized_gvecs, rotation = fit_disklocations_to_hexagonal(ax, self)
+            self._conven_rotation = rotation
+            self._idealized_gvecs = idealized_gvecs
+            if plotpath != None: plt.savefig(plotpath, dpi=300)
+        return self._conven_rotation
 
-    def get_rotatation(self, sanity_plot=True, savepath=None, printing=False):
-        g1 = np.array([ 0, 2/np.sqrt(3)])
-        g2 = np.array([-1, 1/np.sqrt(3)])
-        graw = self.norm_dset()   
-        g = self.clean_normgset()   
-        angs = []
-        ringnos = self.determine_rings()
-        for i in range(len(g)):
-            if g[i][0] == 1 and g[i][1] == 0:
-                indx = i 
-                break
-        ptC = g[indx][0] * g1 + g[indx][1] * g2
-        ptA = graw[indx][:]
-        # want rotation from A to C, so if x coordinate of A larger, rotate back
-        if ptA[0] > ptC[0]: 
-            rotation_sign = -1
-            if printing: print('raw had larger x')
-        else: 
-            rotation_sign = 1
-            if printing: print('raw had smaller x')
-        if printing: print('index of top was ', indx)
-        if printing: print('raw x coord here was ', ptA[0])
-        if printing: print('target x coord here was ', ptC[0])
-        if printing: print('so rotate by a angle with sign ', rotation_sign)
-        # quick helper - get angle from v1 through v2 to v3 in degrees
-        def get_angle(pts):
-            v1, v2, v3 = pts[0], pts[1], pts[2] 
-            l1 = ((v1[0] - v2[0])**2 + (v1[1] - v2[1])**2)**0.5
-            l2 = ((v1[0] - v3[0])**2 + (v1[1] - v3[1])**2)**0.5
-            l3 = ((v3[0] - v2[0])**2 + (v3[1] - v2[1])**2)**0.5
-            return np.arccos((l1**2 + l3**2 - l2**2)/(2*l1*l3)) 
-
-        use_single_ring = True #( len(g) != 12 )
-
-        if use_single_ring:
-
-            print('WARNING: original sample rotation might be incorrect')
-            n_inner = len([i for i in range(len(g)) if ringnos[i] == 1])
-            n_outter = len([i for i in range(len(g)) if ringnos[i] == 2])
-            if n_inner == 6:
-                use_out = False
-                print('using only ring1 for sample rotation')
-            elif n_outter == 6: 
-                use_out = True
-                print('using only ring2 for sample rotation')
-            else:
-                print('AAAA')
-                exit()
-        
-        for i in range(len(g)):
-            if use_single_ring:
-                if use_out and ringnos[i] == 1: 
-                    continue
-                elif (not use_out) and ringnos[i] == 2: 
-                    continue
-            ptA = graw[i][:]
-            ptB = [0,0]
-            ptC = g[i][0] * g1 + g[i][1] * g2
-            angs.append(get_angle([ptA, ptB, ptC]))
-        mean_ang = rotation_sign * np.mean(angs) 
-        stderr_ang = np.std(angs, ddof=1)/np.sqrt(np.size(angs))
-        if printing: print("{} +/- {} rad".format(mean_ang, stderr_ang))
-        # worked well if cyan and red on top of eachother 
-        if sanity_plot:
-            f, ax = plt.subplots()
-            for i in range(len(g)):
-                if use_single_ring:
-                    if use_out and ringnos[i] == 1: continue
-                    elif (not use_out) and ringnos[i] == 2: continue
-                gvec = g[i][0] * g1 + g[i][1] * g2
-                scale = 1/((graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5)
-                ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
-                #ax.text(scale*gvec[0], scale*gvec[1], '{}{}'.format(g[i][0],g[i][1]))
-                ax.text(scale*graw[i][0], scale*graw[i][1], i)
-                grot = rotate2d(scale*graw[i,:], -mean_ang)
-                if ringnos[i] == 1:
-                    ax.scatter(0.75*grot[0], 0.75*grot[1], c='c')
-                else:
-                    ax.scatter(grot[0], grot[1], c='c')
-                #ax.text(grot[0], grot[1], i)
-                scale = 1/((gvec[0] ** 2 + gvec[1] ** 2) ** 0.5) * 0.75 #0.75 factor so offset enough to see
-                ax.scatter(scale*gvec[0], scale*gvec[1], c='r')
-                ax.text(scale*gvec[0], scale*gvec[1], i)
-                ax.text(scale*0.75*gvec[0], scale*0.75*gvec[1], '{}{}'.format(g[i][0],g[i][1]))
-            ax.set_title("{} +/- {} rad".format(mean_ang, stderr_ang))       
-            if savepath is not None:
-                plt.savefig(savepath, dpi=300)
-                plt.close('all')
-            else:
-                plt.show()
-        return mean_ang * 180/np.pi, stderr_ang * 180/np.pi
-
-    ####################################################################################################
-    # I know this is gross it works for now will clean up later
-    ####################################################################################################
-    def clean_normgset(self, sanity_plot=False, prefix=None, dsnum=None):
-        graw = self.norm_dset()
-        g = self.rotated_normgset()
-        ringnos = self.determine_rings()
-        if sanity_plot:
-            #savepath = os.path.join('..','plots', prefix, 'ds_{}'.format(dsnum), 'gvectors.png')
-            f, ax = plt.subplots()
-            ax.scatter(0, 0, c='g')
-            for i in range(len(g)):
-                if ringnos[i] == 1:
-                    #ax.scatter(g[i][0], g[i][1], c='k')
-                    #ax.text(g[i][0], g[i][1], i)
-                    length = (graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5
-                    scale = 1/length
-                    ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
-                    ax.text(scale*graw[i][0], scale*graw[i][1], i)
-                if ringnos[i] == 2:
-                    #ax.scatter(2*g[i][0], 2*g[i][1], c='k')
-                    #ax.text(2*g[i][0], 2*g[i][1], i)
-                    length = (graw[i][0] ** 2 + graw[i][1] ** 2) ** 0.5
-                    scale = 1/length
-                    ax.scatter(scale*graw[i][0], scale*graw[i][1], c='b')
-                    ax.text(scale*graw[i][0], scale*graw[i][1], i)
-
-        ind0n1 = np.argmin([g[i,1] if ringnos[i] == 1 else np.inf for i in range(len(g))]) # find ind of disk with smallest y coord in ring 1
-        g[ind0n1,:] = [-1,0] # -g1
-        ind01 = np.argmax([g[i,1] if ringnos[i] == 1 else -np.inf for i in range(len(g))]) # find ind of disk with largest y coord in ring 1
-        g[ind01,:] = [1,0]  # g1
-        ind1n2 = np.argmax([g[i,0] if ringnos[i] == 2 else -np.inf for i in range(len(g))]) # find ind of disk with largest x coord in ring 2
-        g[ind1n2,:] = [1,-2] #-2*g2+g1
-        indn12 = np.argmin([g[i,0] if ringnos[i] == 2 else np.inf for i in range(len(g))]) # find ind of disk with smallest x coord in ring 2
-        g[indn12,:] = [-1,2]#2*g2-g1
-        for i in range(len(g)):
-            if ringnos[i] == 1 and (i != ind0n1 and i != ind01):
-                if   g[i,1] > 0 and g[i,0] > 0: g[i,:] = [1,-1]  #g1-g2
-                elif g[i,1] > 0 and g[i,0] < 0: g[i,:] = [0,1]   #g2
-                elif g[i,1] < 0 and g[i,0] > 0: g[i,:] = [0,-1]  #-g2
-                elif g[i,1] < 0 and g[i,0] < 0: g[i,:] = [-1,1]  #g2-g1
-        for i in range(len(g)):
-            if ringnos[i] == 2 and (i != ind1n2 and i != indn12):
-                if   g[i,1] > 0 and g[i,0] > 0: g[i,:] = [2,-1]  #2*g1-g2
-                elif g[i,1] > 0 and g[i,0] < 0: g[i,:] = [1,1]   #g1+g2
-                elif g[i,1] < 0 and g[i,0] > 0: g[i,:] = [-1,-1] #-g1-g2
-                elif g[i,1] < 0 and g[i,0] < 0: g[i,:] = [-2,1]  #-2*g1+g2
-        if sanity_plot:
-            g1 = np.array([ 0, 2/np.sqrt(3)])
-            g2 = np.array([-1, 1/np.sqrt(3)])
-            for i in range(len(g)):
-                gvec = g[i][0] * g1 + g[i][1] * g2
-                length = (gvec[0] ** 2 + gvec[1] ** 2) ** 0.5
-                scale = 1/length
-                ax.scatter(scale*gvec[0], scale*gvec[1], c='r')
-                ax.text(scale*gvec[0], scale*gvec[1], i)# "{}-{}/{}".format(i,g[i][0], g[i][1]))
-            #plt.savefig(savepath, dpi=300)
-            plt.show()    
-        return g
+    def clean_normgset(self, plotpath=None):
+        if (not hasattr(self, '_conven_rotation')) or self._conven_rotation == None:
+            if plotpath != None: f, ax = plt.subplots()
+            idealized_gvecs, rotation = fit_disklocations_to_hexagonal(ax, self)
+            self._conven_rotation = rotation
+            self._idealized_gvecs = idealized_gvecs
+            if plotpath != None: plt.savefig(plotpath, dpi=300)
+        return self._idealized_gvecs
 
     def x_set(self): # returns set of distances from central beam for disks that have been integrated only
         xset = np.zeros(self.size_in_use)
@@ -638,6 +578,7 @@ class DiskSet:
                 ring_no[n] = 3
             else:
                 ring_no[n] = -1
+            #print("disk {} at d={} is tagged as being in ring {}".format(n, d, ring_no[n]))
         return ring_no
 
 def get_diskset(dp, peaks, scan_shape, centralbeam, dsnum=None, prefix=None, radius_factor=0.65, plotflag=True):
