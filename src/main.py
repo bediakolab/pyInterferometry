@@ -2,6 +2,7 @@
 import sys
 import os
 import gc
+import shutil
 usep4dstem = True
 if usep4dstem:
     import py4DSTEM
@@ -89,7 +90,7 @@ def main():
         ########################################################
         #### disk intensity extraction
         ########################################################
-        if  (not ds.check_has_diskset()) and ds.check_has_raw() and boolquery("extract disk intensities?"):
+        if  (not ds.check_has_diskset()) and ds.check_has_raw() and (not ds.check_has_mask()) and boolquery("extract disk intensities?"):
             # do the vdf/disk extraction
             datacube, diskset = virtualdf_main(ds)
             dp = np.max(datacube.data, axis=(0,1)).astype(float) 
@@ -99,16 +100,8 @@ def main():
             ds.update_diskset(diskset)
 
         ########################################################
-        #### post vdf/disk extraction plots/analysis
-        ########################################################
-        if ds.check_has_diskset():
-            ds.set_sample_rotation()
-            ds.make_stack_colormap() # NEW makes the colormap plot
-            ds.make_vdf_plots()
-        else:
-            print('couldnt find any data to work with...')
-
-        ########################################################
+        #### disk intensity extraction from mask (for 3+L moire)
+        ####
         #### for extracting vdfs and other analysis from a given 
         #### mask.pkl file, used to study multi-layered moires 
         #### see (very hard coded) scripts for mask generation in
@@ -117,16 +110,40 @@ def main():
         #### without a mask.pkl file all analysis will proceed 
         #### assuming a single moire pattern of interest
         ########################################################
-        if ds.check_has_mask() and boolquery("create/analyze virtual dfs using the given mask?"):
-            if (not ds.check_has_masked_diskset()):
-                datacube, diskset = vdf_from_mask(ds)
-                ds.update_masked_diskset(diskset)
+        if ds.check_has_mask() and (not ds.check_has_masked_diskset()) and boolquery("extract masked disk intensities?"): 
+            datacube, diskset = vdf_from_mask(ds)
+            ds.update_masked_diskset(diskset)
+            ds.select_vdf_masked_diskset()
+        elif ds.check_has_mask() and ds.check_has_masked_diskset(): 
+            if ((not ds.check_has_masked_diskset_partition()) or boolquery("reselect active disk regions?")): 
                 ds.select_vdf_masked_diskset()
-            else:
-                if boolquery("reselect active disk regions?"): ds.select_vdf_masked_diskset()
-                diskset = ds.extract_masked_diskset()
-            ds.make_vdf_plots(diskset, showflag=False, masked=True) 
-            exit()
+
+        if ds.check_has_masked_diskset():
+            ds.make_vdf_plots(showflag=False, masked=True, twolayer=True) 
+            ds.make_vdf_plots(showflag=False, masked=True, threelayer=True)
+            twoLpath = os.path.join(ds.folderpath, "twolayer")
+            threeLpath = os.path.join(ds.folderpath, "threelayer")
+            os.makedirs(twoLpath, exist_ok=True)
+            os.makedirs(threeLpath, exist_ok=True)
+            _, diskname = os.path.split(ds.diskpath)
+            shutil.copy(ds.masked_diskset_path_2L, os.path.join(twoLpath,   diskname) )
+            shutil.copy(ds.masked_diskset_path_3L, os.path.join(threeLpath, diskname) )
+            _, dictname = os.path.split(ds.parampath)
+            shutil.copy(ds.parampath, os.path.join(twoLpath,   dictname) )
+            shutil.copy(ds.parampath, os.path.join(threeLpath, dictname) )
+            print("made subdirectories for 2 layer and 3 layer regions, adding to dataset queue")
+            dsets.append(DataSetContainer(os.path.join(ds.folderpath, "twolayer"), generated_from_mask=True, numberoverlap=2))
+            dsets.append(DataSetContainer(os.path.join(ds.folderpath, "threelayer"), generated_from_mask=True, numberoverlap=3))
+        
+        ########################################################
+        #### post vdf/disk extraction plots/analysis
+        ########################################################
+        if ds.check_has_diskset():
+            ds.set_sample_rotation()
+            ds.make_stack_colormap() # NEW makes the colormap plot
+            ds.make_vdf_plots()
+        else:
+            print('couldnt find any data to work with...') 
 
         ########################################################
         #### displacement fitting

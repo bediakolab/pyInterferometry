@@ -305,7 +305,7 @@ def parse_parameter_file(path, use_nan=False):
 class DataSetContainer:
 
     # folderprefix of something like MoS2_parallel
-    def __init__(self, folderprefix, dataset_number = None):
+    def __init__(self, folderprefix, dataset_number = None, generated_from_mask = False, numberoverlap = None):
 
         self.theta_colormap = 'RdBu_r'
         self.dilation_colormap = 'PuOr_r'
@@ -315,17 +315,32 @@ class DataSetContainer:
         self.localsubtractcheck_colormap = 'RdBu_r'
 
         if dataset_number is None: # one argument given, so parse path 
+            
             folderpath = folderprefix
-            head_tail = os.path.split(folderpath)
-            head, tail = head_tail[0], head_tail[1]
-            dataset_number = int(tail.split('ds')[1])
+            folderparse = os.path.split(folderpath)
+        
+            if generated_from_mask: 
+                headtail, layersubdir = os.path.split(folderparse[0]), folderparse[1]
+                head, tail = headtail[0], headtail[1]
+            else:
+                head, tail = folderparse[0], folderparse[1]
+
+            dataset_number = int(tail.split('ds')[1])  
             head_tail = os.path.split(head)
             head, tail = head_tail[0], head_tail[1]
             folderprefix = tail
 
+        if generated_from_mask:
+
+            self.name       = "{} : Dataset #{} {} layer region".format(folderprefix, dataset_number, numberoverlap)
+            self.numberoverlap = numberoverlap
+            self.folderpath = os.path.join('..', 'data', folderprefix, "ds{}".format(dataset_number), layersubdir) 
+
+        else:
+            self.name       = "{} : Dataset #{}".format(folderprefix, dataset_number)
+            self.folderpath = os.path.join('..', 'data', folderprefix, "ds{}".format(dataset_number)) 
+
         # paths to important files, edit here to change directory organization
-        self.name       = "{} : Dataset #{}".format(folderprefix, dataset_number)
-        self.folderpath = os.path.join('..', 'data', folderprefix, "ds{}".format(dataset_number)) 
         self.rawpathh5  = os.path.join(self.folderpath, "dp.h5")
         self.rawpathdm  = os.path.join(self.folderpath, "dp.dm4")
         self.parampath  = os.path.join(self.folderpath, "info.txt")
@@ -383,8 +398,17 @@ class DataSetContainer:
         self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
 
         self.masked_diskset_path = os.path.join(self.folderpath, "masked_diskset.pkl")
-        self.maskeddiskplotpath = os.path.join(self.plotpath, "masked_disks.png")
-        self.maskedvdfplotpath = os.path.join(self.plotpath, "masked_vdf.png")
+
+        if not generated_from_mask:
+            self.masked_diskset_path_2L = os.path.join(self.folderpath, "masked_diskset_2L.pkl")
+            self.masked_diskset_path_3L = os.path.join(self.folderpath, "masked_diskset_3L.pkl")
+            self.maskeddiskplotpath_2L = os.path.join(self.plotpath, "masked_disks_2L.png")
+            self.maskedvdfplotpath_2L = os.path.join(self.plotpath, "masked_vdf_2L.png")
+            self.maskeddiskplotpath_3L = os.path.join(self.plotpath, "masked_disks_3L.png")
+            self.maskedvdfplotpath_3L = os.path.join(self.plotpath, "masked_vdf_3L.png")
+            self.masked_diskset_2L = None
+            self.masked_diskset_3L = None
+            self.masked_diskset = None
 
         # fields to hold the data
         self.u_unwrap       = None    # set by extract_unwraping, update_unwrapping
@@ -393,7 +417,6 @@ class DataSetContainer:
         self.centers        = None    # set by extract_unwraping, update_adjacency
         self.adjacency_type = None    # set by extract_unwraping, update_adjacency
         self.diskset        = None    # set by extract_diskset, update_diskset
-        self.masked_diskset = None
         self.raw_data       = None
 
         self.parameter_dict = default_parameters # defined in globals.py  
@@ -541,11 +564,17 @@ class DataSetContainer:
             return get_probe(probes[indx])
         return get_probe(self.parameter_dict["ProbeUsed"])
 
-    def extract_masked_diskset(self):
-        with open(self.masked_diskset_path, 'rb') as f:
-            self.masked_diskset = pickle.load(f)
-        return self.masked_diskset
-
+    def extract_masked_diskset(self, twolayer=False, threelayer=False):
+        if twolayer:
+            with open(self.masked_diskset_path_2L, 'rb') as f: self.masked_diskset_2L = pickle.load(f)
+            return self.masked_diskset_2L
+        elif threelayer:
+            with open(self.masked_diskset_path_3L, 'rb') as f: self.masked_diskset_3L = pickle.load(f)
+            return self.masked_diskset_3L
+        else:
+            with open(self.masked_diskset_path, 'rb') as f: self.masked_diskset = pickle.load(f)
+            return self.masked_diskset
+  
     # makes the bivariate colormap
     def make_stack_colormap(self, showflag=False):
         if self.diskset is None: self.extract_diskset()
@@ -586,16 +615,24 @@ class DataSetContainer:
         plt.show()
         while True:
             try:
-                use_indx = [int(el.strip()) for el in input("which vdfs to use? enter indices separated by commas").split(',')]
+                use_indx = [int(el.strip()) for el in input("which vdfs to use for 2L? enter indices separated by commas").split(',')]
                 break
             except:
                 print('uh try again parse error')
         diskset.reset_useflags()
         for n in use_indx: diskset.set_useflag(n, True)
-        print(use_indx)
-        self.update_masked_diskset(diskset)
+        self.update_masked_diskset(diskset, twolayer=True)
+        while True:
+            try:
+                use_indx = [int(el.strip()) for el in input("which vdfs to use for 3L? enter indices separated by commas").split(',')]
+                break
+            except:
+                print('uh try again parse error')
+        diskset.reset_useflags()
+        for n in use_indx: diskset.set_useflag(n, True)
+        self.update_masked_diskset(diskset, threelayer=True)
     
-    def make_vdf_plots(self, showflag=False, masked=False):
+    def make_vdf_plots(self, showflag=False, masked=False, twolayer=False, threelayer=False):
 
         if (not masked):
             self.extract_diskset()
@@ -604,11 +641,21 @@ class DataSetContainer:
             pltpath2 = self.vdfplotpath
             Ndiskparam = "NumberDisksUsed"
         if (masked):
-            self.extract_masked_diskset()
-            diskset = self.masked_diskset
-            pltpath1 = self.maskeddiskplotpath
-            pltpath2 = self.maskedvdfplotpath
-            Ndiskparam = "NumberDisksUsed_Masked"
+            if twolayer:
+                self.extract_masked_diskset(twolayer=True)
+                diskset = self.masked_diskset_2L
+                pltpath1 = self.maskeddiskplotpath_2L
+                pltpath2 = self.maskedvdfplotpath_2L
+                Ndiskparam = "NumberDisksUsed_Masked_2L"
+            elif threelayer:
+                self.extract_masked_diskset(threelayer=True)
+                diskset = self.masked_diskset_3L
+                pltpath1 = self.maskeddiskplotpath_3L
+                pltpath2 = self.maskedvdfplotpath_3L
+                Ndiskparam = "NumberDisksUsed_Masked_3L"
+            else:
+                print("please specify three layer or two layer to make masked vdfs")
+                return
             
         counter = 0
         tot_img = np.zeros((diskset.nx, diskset.ny))
@@ -1466,11 +1513,18 @@ class DataSetContainer:
         with open(self.diskpath, 'wb') as f: 
             pickle.dump( diskset, f )
 
-    def update_masked_diskset(self, diskset):
-        if os.path.exists(self.masked_diskset_path):
-            print('WARNING: overwriting diskset for {}'.format(self.name))
-        with open(self.masked_diskset_path, 'wb') as f: 
-            pickle.dump( diskset, f )
+    def update_masked_diskset(self, diskset, twolayer=False, threelayer=False):
+        if twolayer: 
+            path = self.masked_diskset_path_2L
+            self.masked_diskset_2L = diskset
+        elif threelayer:
+            path = self.masked_diskset_path_3L
+            self.masked_diskset_3L = diskset
+        else: 
+            path = self.masked_diskset_path
+            self.masked_diskset = diskset
+        if os.path.exists(path): print('WARNING: overwriting {} for {}'.format(path, self.name))
+        with open(path, 'wb') as f: pickle.dump( diskset, f )
 
     def update_displacement_fit(self, coefs, fit):
         print('updating displacements for {}'.format(self.name))
@@ -1590,7 +1644,11 @@ class DataSetContainer:
 
     def check_has_diskset(self): return os.path.exists(self.diskpath)
 
-    def check_has_masked_diskset(self): return os.path.exists(self.masked_diskset_path)
+    def check_has_masked_diskset(self): 
+        return os.path.exists(self.masked_diskset_path)
+
+    def check_has_masked_diskset_partition(self): 
+        return os.path.exists(self.masked_diskset_path_2L) and os.path.exists(self.masked_diskset_path_3L)
 
     def check_has_mask(self): return os.path.exists(self.maskpath)
 

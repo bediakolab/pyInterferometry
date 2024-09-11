@@ -550,7 +550,7 @@ class DiskSet:
         return pairs      
 
     def get_rotatation(self, plotpath=None):
-        if (not hasattr(self, '_conven_rotation')) or self._conven_rotation == None or boolquery("redo sample rotation? (fit dp)"):
+        if (not hasattr(self, '_conven_rotation')) or self._conven_rotation == None: # or boolquery("redo sample rotation? (fit dp)"):
             if plotpath != None: f, ax = plt.subplots()
             idealized_gvecs, rotation = fit_disklocations_to_hexagonal(ax, self)
             self._conven_rotation = rotation
