@@ -22,7 +22,7 @@ from new_utils import normNeighborDistance
 from skimage import measure
 from masking import convex_mask
 from new_utils import anom_nan_filter, plot_images
-from utils import nan_gaussian_filter, getAdjacencyMatrixManualAB, doIntersect
+from utils import nan_gaussian_filter, getAdjacencyMatrixManualAB, doIntersect, manual_define_points
 from new_utils import get_lengths, get_angles
 from scipy.spatial import Delaunay
 from numpy import ones,vstack
@@ -51,42 +51,61 @@ def watershed_regions(u, boundarythresh=0.5, refine=True):
     thresh = images2
     thresh = thresh - np.min(thresh.flatten()) 
     thresh = thresh / np.max(thresh.flatten())
+    usemanual = False
 
     while True:
 
-        print('using threshold of {}'.format(boundarythresh))
-        AA_regions = (thresh < boundarythresh)
-        labeled, _ = ndi.label(AA_regions)
+        if usemanual:
+            print('using manual center definition')
+            centers = manual_define_points(images2, origin='upper')
+            for i in range(len(centers)): 
+                centers[i][0], centers[i][1] = centers[i][1], centers[i][0] # swapped convention 
+            center_mask = np.zeros((images2.shape[0], images2.shape[1]))
+            for i in range(len(centers)): center_mask[int(centers[i][0]), int(centers[i][1])] = 1
 
-        centers = []
-        center_mask = np.zeros((images2.shape[0], images2.shape[1]))
-        for index in range(1, np.max(labeled) + 1):
-            label_mask = (labeled == index)
-            region_indeces = label_mask.nonzero()
-            avg_i = round(np.mean(region_indeces[0]))
-            avg_j = round(np.mean(region_indeces[1]))
-            centers.append([avg_i, avg_j])
-            center_mask[int(avg_i), int(avg_j)] = 1
+        else:
+            print('using threshold of {}'.format(boundarythresh))
+            AA_regions = (thresh < boundarythresh)
+            labeled, _ = ndi.label(AA_regions)
+            centers = []
+            center_mask = np.zeros((images2.shape[0], images2.shape[1]))
+            for index in range(1, np.max(labeled) + 1):
+                label_mask = (labeled == index)
+                region_indeces = label_mask.nonzero()
+                avg_i = round(np.mean(region_indeces[0]))
+                avg_j = round(np.mean(region_indeces[1]))
+                centers.append([avg_i, avg_j])
+                center_mask[int(avg_i), int(avg_j)] = 1
 
         markers, _ = ndi.label(center_mask)
         labels = watershed(images2, markers)
         region_masks = []
-        centers = []
+        WScenters = []
         for index in np.unique(labels):
             label_mask = (labels == index)
             region_indeces = label_mask.nonzero()
             avg_i = round(np.mean(region_indeces[0]))
             avg_j = round(np.mean(region_indeces[1]))
-            centers.append([avg_i, avg_j])
+            WScenters.append([avg_i, avg_j])
             region_masks.append(label_mask)
 
         if refine:
-            plot_images([images2, AA_regions, labeled, labels])
+
+            images = [images2, AA_regions, labeled, labels]
+            f, ax = plt.subplots(1,len(images))
+            for i in range(len(images)): ax[i].imshow(images[i], cmap=plt.cm.gray)
+            for center in centers: 
+                for i in range(len(images)): ax[i].scatter(center[1], center[0], c='r', s=0.5)
+            plt.show()
+
             satisfied = boolquery('satisfied? (y/n')
-            if not satisfied: boundarythresh = float(input("new threshold?"))
-            else: return labels, centers, region_masks
+            if not satisfied: 
+                usemanual = boolquery('use manual? (y/n)')
+                if not usemanual:
+                    boundarythresh = float(input("ok, new threshold value?"))
+            else: return labels, WScenters, region_masks
         else:
-             return labels, centers, region_masks
+             return labels, WScenters, region_masks
 
 # rotate u vectors until the sp connection closest to vertical is sp1 (since sp1,sp2,sp3 choice arbitrary)
 def automatic_sp_rotation(u, centers, adjacency_type, eps=1e-4, transpose=False, plotting=False):
@@ -148,7 +167,7 @@ def manual_adjust_voroni(u, regions, vertices):
         if boolquery('satisfied?'): break
     return regions,vertices
 
-def geometric_unwrap_tri(centers, adjacency_type, u, voronibool):
+def geometric_unwrap_tri(centers, adjacency_type, u_cart, voronibool):
 
     # AB WATERSHED
     u_rz_noshift = cartesian_to_rzcartesian(u_cart.copy(), sign_wrap=False, shift=False) 
@@ -173,8 +192,8 @@ def geometric_unwrap_tri(centers, adjacency_type, u, voronibool):
             type2[i,j] = np.min( [np.abs(uang[i,j]-1), np.abs(uang[i,j]-5),  np.abs(uang[i,j]-9)] )
             uang[i,j] = np.min( [type1[i,j], type2[i,j]] )
 
+    refineWS = True
     regions, centers, region_masks = watershed_regions(uang, 0.35, refineWS)
-    # GOOD TO NOW
 
     # used to see if each region is an AB or BA type
     region_type = []
@@ -192,7 +211,7 @@ def geometric_unwrap_tri(centers, adjacency_type, u, voronibool):
 
     #for i in range(len(centers)): u = rzSignAlign(region_masks[i], u, points[i])
 
-    # get n,m zone adjustments for voroni regions
+    # get n,m zone adjustments for regions
     nmat, mmat = np.zeros((n, n)), np.zeros((n, n))
     for r in range(len(centers)):
         for i in range(n):

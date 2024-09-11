@@ -159,12 +159,12 @@ def fit_full_hexagon(diskset, ncoefs=2, binw=1, g=None, plot=True, guess=None, A
     uvecs, residuals = fit_u(I, coefs, nx, ny, g=g, guess=guess, parallel=True, nproc=12, norm_bool=True, multistart_bool=True, multistart_neighbor_bool=False)
     
     ############## making a residual sanity plot #############
-    resid_plot = True
+    resid_plot = False
     if resid_plot:
         counter = 0
         f, ax = plt.subplots(4,3)
         ax = ax.flatten()
-        for i in range(12):
+        for i in range(residuals.shape[2]):
             im = ax[i].imshow(residuals[:,:,i])
             div = make_axes_locatable(ax[i])
             cax = div.append_axes('right', size='5%', pad=0.05)

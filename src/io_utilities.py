@@ -137,7 +137,7 @@ def unwrap_main(ds, flip=False, transp=True, pad=1):
         exit()
 
     while True:
-        methodid = input("Method? \n1: voronoi AA \n2: watershed AA \n3: watershed AB \n").lower().strip()[0] 
+        methodid = input("Method? (see Journal of applied physics 136 (7), 074301 for comparison/details) \n1: voronoi AA \n2: watershed AA \n3: watershed AB \n").lower().strip()[0] 
         if int(methodid) == 1: 
             voronibool, tribool = True, False
             ds.update_parameter("UnwrapMethod", "Voronoi AA", "unwrap_main")
@@ -377,6 +377,7 @@ class DataSetContainer:
         self.localsubplot     = os.path.join(self.plotpath, "sanity_local_substraction.png")
         self.sanity_intfit    = os.path.join(self.plotpath, "sanity_vdf_check2.png")
         self.sanity_vdf       = os.path.join(self.plotpath, "sanity_vdf_check.svg")
+        self.sanity_vdf_disks = os.path.join(self.plotpath, "disk_resid_check.svg")
         self.sanity_axes      = os.path.join(self.plotpath, "sanity_axes.png")
         self.disp_orrientation_sanity =    os.path.join(self.plotpath, "sanity_disp_orrientation.png")
         self.unwrap_orrientation_sanity =  os.path.join(self.plotpath, "sanity_unwrap_orrientation.png")
@@ -617,6 +618,7 @@ class DataSetContainer:
         axes = axes.flatten()
         gvecs = diskset.clean_normgset(self.rotsanitypath)
         for n in range(diskset.size):
+            if counter == 12: break
             if diskset.in_use(n): 
                 img = diskset.df(n)
                 tot_img = tot_img + img
@@ -971,6 +973,22 @@ class DataSetContainer:
         plt.savefig(self.sanity_vdf, dpi=300)
         plt.close('all')
 
+        f, axes = plt.subplots(6,6) # 12 disks plot fit, real, residual for all 
+        ax = axes.reshape(12,3)
+        for n in range(I.shape[0]): 
+            for i in range(3):
+                if i == 0:   val, title = I[n,:,:], 'raw'
+                elif i == 1: val, title = I_fit[n,:,:], 'fit'
+                elif i == 2: val, title = I[n,:,:] - I_fit[n,:,:], 'resid'
+                img = ax[n, i].imshow(val)
+                ax[n,i].set_title(title)
+                ax[n,i].axis('off')
+                div = make_axes_locatable(ax[n, i])
+                cax = div.append_axes('right', size='5%',pad=0.05)
+                f.colorbar(img, cax=cax, orientation='vertical')
+
+        plt.savefig(self.sanity_vdf_disks, dpi=300)
+        plt.close('all')
 
     def make_displacement_plot(self, showflag=False, rewrite=False):
 
@@ -1678,6 +1696,7 @@ class DataSetContainer:
             ax[0].set_title('fit'); 
             sample_angle = self.extract_parameter("SampleRotation", update_if_unset=True, param_type=float)
             ax[1].imshow(ndimage.rotate(img, -sample_angle, reshape=False), origin='lower') 
+            ax[1].set_title("if twist-only, SP1(blue) || y")
             plt.savefig(self.disp_orrientation_sanity, dpi=300)
             plt.close('all')
             return self.u_wrapped

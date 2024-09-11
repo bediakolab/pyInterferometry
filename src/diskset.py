@@ -27,13 +27,12 @@ def expected_bragg_locs(gvecs, com_x, com_y, rotation, scale=1): # no stigmation
     # getting an ordering of the expected disks aligning with provided g,
     # also will deal with scenario where only measure 11 disks from beam stop
     use_pts = []
-    #print(pts)
     for g in gvecs:
         dists = [(g[0] - pts[i][0])**2 + (g[1] - pts[i][1])**2 for i in range(len(pts))]
-        #print(dists)
         index_guess_pt = np.argmin(dists)
         use_pts.append(pts[index_guess_pt])
         pts.pop(index_guess_pt)
+        if len(dists) == 1: break # if have more than 12 disks for some reason, will ignore disk furthest from the hexagonal fit
     return use_pts
 def expected_bragg_dists(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assume!
     pts = expected_bragg_locs(gvecs, com_x, com_y, rotation, scale)
@@ -56,7 +55,8 @@ def expected_hex_g(gvecs, com_x, com_y, rotation, scale=1): # no stigmation assu
         use_pts.append(pts[index_guess_pt])
         pts.pop(index_guess_pt)
         simplifygvecs.append(locs[index_guess_pt])
-        locs.pop(index_guess_pt)        
+        locs.pop(index_guess_pt) 
+        if len(dists) == 1: break # if have more than 12 disks for some reason, will ignore disk furthest from the hexagonal fit       
     return simplifygvecs, use_pts
 def fit_disklocations_to_hexagonal(ax, diskset):
 
@@ -106,6 +106,7 @@ def fit_disklocations_to_hexagonal(ax, diskset):
     idealized_gvecs, pts = expected_hex_g(graw, comx, comy, rotation, scale)
     if ax != None:
         for i in range(len(graw)): 
+            if i == 12: break # if have extra disks
             ax.scatter(pts[i][0], pts[i][1], c='r')
             ax.scatter(graw[i][0], graw[i][1], c='k')
             ax.text(pts[i][0], pts[i][1], "{:.0f}{:.0f} ({:.0f})".format(idealized_gvecs[i][0],idealized_gvecs[i][1], i), c='k')
@@ -128,7 +129,7 @@ def fit_disklocations_to_hexagonal(ax, diskset):
     x0, y0, ap, bp, e, phi, xfit, yfit = fit_ellipse(np.array(x), np.array(y))
     print("...fit eccentricity is {} (0 if no stig/heterostrain), semi major and semi minor axes of {} and {} ".format(e, ap, bp))
     print("The angle of anticlockwise rotation of the major-axis from x-axis is {} degrees".format(phi*180/np.pi))
-    if ax != None: ax.plot(xfit, yfit, color='grey')
+    if ax != None: ax.plot([x + comx for x in xfit], [y + comy for y in yfit], color='grey')
 
     print('rotation uncertainty (formal error, 1sigma) in degrees : ', rotation_uncertainty)
     ax.text(0,0, 'fit (rot={:.2f}+/-{:.2f} deg)'.format(rotation, rotation_uncertainty), c='r')

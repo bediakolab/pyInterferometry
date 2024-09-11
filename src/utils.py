@@ -427,7 +427,7 @@ def manual_define_AA(img, points=None, adj_mat=None):
     return points, adjacency_matrix
 
 # for manual defined cropping
-def manual_define_points(img, otherpts=None):
+def manual_define_points(img, otherpts=None, origin='lower'):
     plt.close('all')
     fig, ax = plt.subplots()
     if otherpts is None:
@@ -443,7 +443,7 @@ def manual_define_points(img, otherpts=None):
         ax.scatter(x,y,color='k')
         fig.canvas.draw()
     print("please click to define the points in inner diffraction ring, close figure when done")
-    ax.imshow(img, origin='lower')
+    ax.imshow(img, origin=origin)
     cid = fig.canvas.mpl_connect('button_press_event', click_event)
     plt.show()
     print('finished with manual disk definition')
